@@ -259,6 +259,8 @@ FW_VERSIONS = {
   CAR.MAZDA_CX9_2021: {
     (Ecu.eps, 0x730, None): [
       b'TC3M-3210X-A-00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
+      # CX-9 with a supported 2022+ CX-5 EPS swap
+      b'KSD5-3210X-C-00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
     ],
     (Ecu.engine, 0x7e0, None): [
       b'PW25-188K2-\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',

@@ -2,6 +2,7 @@ import pytest
 
 from opendbc.car import structs
 from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.fw_versions import match_fw_to_car
 from opendbc.car.mazda.interface import CarInterface
 from opendbc.car.mazda.values import CAR, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW
 
@@ -19,6 +20,26 @@ def _eps_fw(version: bytes) -> list[structs.CarParams.CarFw]:
   fw.subAddress = 0
   fw.fwVersion = version
   return [fw]
+
+
+def _fw(ecu, address: int, version: bytes) -> structs.CarParams.CarFw:
+  fw = structs.CarParams.CarFw()
+  fw.brand = 'mazda'
+  fw.ecu = ecu
+  fw.address = address
+  fw.subAddress = 0
+  fw.fwVersion = version
+  return fw
+
+
+HYBRID_CX9_FW = [
+  _fw(Ecu.engine, 0x7e0, b'PXM7-188K2-E' + b'\x00' * 12),
+  _fw(Ecu.transmission, 0x7e1, b'PXM7-21PS1-B' + b'\x00' * 12),
+  _fw(Ecu.abs, 0x760, b'TA0B-437K2-C' + b'\x00' * 12),
+  _fw(Ecu.fwdRadar, 0x764, b'K131-67XK2-F' + b'\x00' * 12),
+  _fw(Ecu.fwdCamera, 0x706, b'GSH7-67XK2-S' + b'\x00' * 12),
+  _fw(Ecu.eps, 0x730, b'KSD5-3210X-C-00' + b'\x00' * 9),
+]
 
 
 def _params(candidate, car_fw=None, alpha_long=False):
@@ -42,6 +63,16 @@ class TestMazdaEpsSwap:
 
   def test_swapped_eps_lifts_dashcam_and_the_speed_floor(self):
     CP = _params(CAR.MAZDA_CX5, _eps_fw(SWAPPED_EPS_FW))
+    assert not CP.dashcamOnly
+    assert CP.minSteerSpeed == 0
+    assert CP.steerActuatorDelay == pytest.approx(0.14)
+
+  def test_hybrid_cx9_is_identified_with_the_swapped_eps(self):
+    exact, candidates = match_fw_to_car(HYBRID_CX9_FW, "", allow_fuzzy=False, log=False)
+    assert exact
+    assert candidates == {CAR.MAZDA_CX9_2021}
+
+    CP = _params(CAR.MAZDA_CX9_2021, HYBRID_CX9_FW)
     assert not CP.dashcamOnly
     assert CP.minSteerSpeed == 0
     assert CP.steerActuatorDelay == pytest.approx(0.14)
