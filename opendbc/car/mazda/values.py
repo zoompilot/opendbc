@@ -99,6 +99,8 @@ class MazdaFlags(IntFlag):
   # Static flags
   # Gen 1 hardware: same CAN messages and same camera
   GEN1 = 1
+  # Export CX-9 PCM family whose CRZ_SPEED scale differs from the shared Mazda DBC.
+  PXM7_CRUISE_SPEED = 2
 
 
 class MazdaSafetyFlags(IntFlag):

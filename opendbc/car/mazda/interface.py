@@ -5,7 +5,7 @@ from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.mazda.carcontroller import CarController
 from opendbc.car.mazda.carstate import CarState
 from opendbc.car.mazda.radar_interface import RadarInterface
-from opendbc.car.mazda.values import CAR, DBC, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, MazdaSafetyFlags
+from opendbc.car.mazda.values import CAR, DBC, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, MazdaFlags, MazdaSafetyFlags
 
 
 class CarInterface(CarInterfaceBase):
@@ -19,6 +19,11 @@ class CarInterface(CarInterfaceBase):
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.mazda)]
 
     ret.radarUnavailable = Bus.radar not in DBC[candidate]
+
+    if candidate == CAR.MAZDA_CX9_2021 and any(
+      fw.ecu == 'engine' and fw.fwVersion.startswith(b'PXM7-188K2-') for fw in car_fw
+    ):
+      ret.flags |= MazdaFlags.PXM7_CRUISE_SPEED.value
 
     # 2022+ CX-5 EPS can steer to zero and has no hands-off lockout. Detected by EPS firmware
     # rather than by model, so an EPS swapped into an older Mazda is recognized as what it is.
