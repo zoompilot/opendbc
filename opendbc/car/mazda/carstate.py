@@ -256,7 +256,8 @@ class CarState(CarStateBase, CarStateExt):
     # it should be enabled (steer lockout). Don't warn until we actually get lkas active
     # and lose it again, i.e, after initial lkas activation
     if self.CP.minSteerSpeed > 0:
-      ret.steerFaultTemporary = self.lkas_allowed_speed and lkas_blocked
+      # On if no driver torque the last 5 seconds
+      ret.steerFaultTemporary = cp.vl["STEER_RATE"]["HANDS_OFF_5_SECONDS"] == 1
     else:
       # CX-5 2022: EPS accepts steering at all speeds regardless of LKAS_BLOCK.
       # Verified across 5.5M frames: LKAS_BLOCK never indicates a real steering failure.
