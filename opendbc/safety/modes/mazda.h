@@ -8,6 +8,9 @@
 #define MAZDA_CRZ_INFO      0x21bU
 #define MAZDA_CRZ_CTRL      0x21cU
 #define MAZDA_CRZ_BTNS      0x09dU
+// Physical TJA button, DBC start bit 11 (byte 1, bit 3). Observed on a CTS-equipped gen1
+// Mazda; trims without the button hold it low for the life of a drive.
+#define MAZDA_TJA_BUTTON_BIT 11U
 #define MAZDA_RADAR_STATIC  0x499U
 #define MAZDA_RADAR_TRACK_1 0x361U
 #define MAZDA_RADAR_TRACK_2 0x362U
@@ -32,6 +35,8 @@
 #define MAZDA_ENGAGE_BTN_WINDOW 10U
 
 static bool mazda_longitudinal = false;
+// Latched by the first TJA press. Until then every car keeps the MRCC-derived main edge.
+static bool mazda_tja_seen = false;
 static bool mazda_steer_to_zero_eps = false;
 static uint32_t mazda_engage_btn_frames = 0U;
 
@@ -114,7 +119,23 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
     if ((msg->addr == MAZDA_CRZ_CTRL) && !mazda_longitudinal) {
       bool cruise_engaged = msg->data[0] & 0x8U;
       pcm_cruise_check(cruise_engaged);
-      acc_main_on = GET_BIT(msg, 17U);
+      // Once TJA owns lateral, MRCC no longer drives the MADS main edge.
+      if (!mazda_tja_seen) {
+        acc_main_on = GET_BIT(msg, 17U);
+      }
+    }
+
+    if (msg->addr == MAZDA_CRZ_BTNS) {
+      // Trims with the physical TJA button use it as the MADS lateral switch, so lateral no
+      // longer follows MRCC. Latch on the first press: a car without the button never sets the
+      // bit and keeps the existing path untouched.
+      const bool tja_button = GET_BIT(msg, MAZDA_TJA_BUTTON_BIT);
+      if (tja_button) {
+        mazda_tja_seen = true;
+      }
+      if (mazda_tja_seen) {
+        mads_button_press = tja_button ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
+      }
     }
 
     if ((msg->addr == MAZDA_CRZ_BTNS) && mazda_longitudinal) {
@@ -153,7 +174,9 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
 
         if (acc_armed || cruise_engaged_prev || (!brake && !brake_pressed_prev)) {
           // Gate the main edge on radar ownership to align with software availability.
-          acc_main_on = acc_armed && mazda_radar_was_silenced;
+          if (!mazda_tja_seen) {
+            acc_main_on = acc_armed && mazda_radar_was_silenced;
+          }
           // Require recent SET/RES intent on the engaged edge; ACC_ACTIVE alone may acknowledge
           // synthetic traffic rather than a driver request.
           if (cruise_engaged && !cruise_engaged_prev && (mazda_engage_btn_frames > 0U)) {
@@ -312,6 +335,7 @@ static bool mazda_fwd_hook(int bus_num, int addr) {
 
 static safety_config mazda_init(uint16_t param) {
   mazda_engage_btn_frames = 0U;
+  mazda_tja_seen = false;
   mazda_radar_mastered = false;
   mazda_mastered_pedals_frames = 0U;
   mazda_radar_was_silenced = false;

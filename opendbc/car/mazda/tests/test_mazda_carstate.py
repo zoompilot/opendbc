@@ -11,6 +11,7 @@ under braking, cruiseState.standstill and the LKAS non-delivery latch.
 import pytest
 
 from opendbc.car import DT_CTRL
+from opendbc.car import structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.mazda import mazdacan
 from opendbc.car.mazda.tests.conftest import car_interface, packer
@@ -489,3 +490,33 @@ class TestSteerUndeliveredLatch:
     for _ in range(5):
       ret = rig.step(600, 0, 1, speed_kph=7.0 * CV.MS_TO_KPH)
     assert ret.steerFaultTemporary
+
+
+class TestTjaButtonEvents:
+  """The physical TJA button is published as an lkas event alongside, not instead of,
+  mainCruise. Trims without the button hold CRZ_BTNS bit 11 low, so it never fires there."""
+
+  ButtonType = structs.CarState.ButtonEvent.Type
+
+  def _btns(self, CI, pk, i, **values):
+    ret, _ = feed(CI, i, pk.make_can_msg("CRZ_BTNS", 0, values))
+    return ret
+
+  def test_tja_press_emits_an_lkas_event(self):
+    CI, pk = car_interface(alpha_long=False), packer()
+    self._btns(CI, pk, 0, TJA_BUTTON=0)
+    ret = self._btns(CI, pk, 1, TJA_BUTTON=1)
+    assert [be.type for be in ret.buttonEvents] == [self.ButtonType.lkas]
+    assert ret.buttonEvents[0].pressed
+
+  def test_no_event_without_the_button(self):
+    CI, pk = car_interface(alpha_long=False), packer()
+    for i in range(10):
+      ret = self._btns(CI, pk, i, TJA_BUTTON=0)
+      assert not [be for be in ret.buttonEvents if be.type == self.ButtonType.lkas]
+
+  def test_main_cruise_event_is_unchanged(self):
+    CI, pk = car_interface(alpha_long=False), packer()
+    self._btns(CI, pk, 0, MODE_X=0, MODE_Y=0)
+    ret = self._btns(CI, pk, 1, MODE_X=1, MODE_Y=1)
+    assert [be.type for be in ret.buttonEvents] == [self.ButtonType.mainCruise]

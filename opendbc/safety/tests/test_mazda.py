@@ -132,8 +132,9 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
     values = {"CRZ_ACTIVE": enable}
     return self.packer.make_can_msg_safety("CRZ_CTRL", 0, values)
 
-  def _button_msg(self, resume=False, cancel=False, set_m=False, set_p=False):
+  def _button_msg(self, resume=False, cancel=False, set_m=False, set_p=False, tja=False):
     values = {
+      "TJA_BUTTON": tja,
       "CAN_OFF": cancel,
       "CAN_OFF_INV": (cancel + 1) % 2,
       "RES": resume,
@@ -557,6 +558,76 @@ class TestMazdaIgnition(unittest.TestCase):
     self.assertTrue(self.safety.get_ignition_can())
     self.safety.ignition_can_hook(self._msg(0x20))
     self.assertFalse(self.safety.get_ignition_can())
+
+
+class TestMazdaTjaMads(unittest.TestCase):
+  """The physical TJA button as the MADS lateral switch, latched on first observation.
+
+  Only trims that actually carry the button ever set CRZ_BTNS bit 11. Everything here is
+  keyed on that observation rather than on the fingerprint, because neither MAZDA_CX5_2022
+  nor MAZDA_CX9_2021 predicts whether the button is fitted.
+  """
+
+  def setUp(self):
+    self.packer = CANPackerSafety("mazda_2017")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, 0)
+    self.safety.init_tests()
+    self.safety.set_mads_params(True, False, False)
+
+  def _btns(self, tja=False):
+    return self.packer.make_can_msg_safety("CRZ_BTNS", 0, {"TJA_BUTTON": tja})
+
+  def _crz_ctrl(self, main_on):
+    return self.packer.make_can_msg_safety("CRZ_CTRL", 0, {"CRZ_AVAILABLE": main_on})
+
+  def test_no_button_leaves_mrcc_path_alone(self):
+    # A car without the button never sets bit 11, so MRCC keeps driving the main edge and
+    # the MADS button stays unavailable.
+    for _ in range(10):
+      self.safety.safety_rx_hook(self._btns(False))
+    self.assertEqual(-1, self.safety.get_mads_button_press())  # UNAVAILABLE
+
+    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.assertTrue(self.safety.get_acc_main_on())
+    self.safety.safety_rx_hook(self._crz_ctrl(False))
+    self.assertFalse(self.safety.get_acc_main_on())
+
+  def test_first_press_allows_lateral(self):
+    self.safety.safety_rx_hook(self._btns(False))
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+    self.safety.safety_rx_hook(self._btns(True))
+    self.assertEqual(1, self.safety.get_mads_button_press())  # PRESSED
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+    self.safety.safety_rx_hook(self._btns(False))
+    self.assertEqual(0, self.safety.get_mads_button_press())  # NOT_PRESSED
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+  def test_mrcc_no_longer_drives_the_main_edge_once_latched(self):
+    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.assertTrue(self.safety.get_acc_main_on())
+
+    self.safety.safety_rx_hook(self._btns(True))
+    self.safety.safety_rx_hook(self._btns(False))
+
+    # acc_main_on is frozen at its pre-latch value, so MRCC going off produces no falling
+    # edge and cannot disengage lateral.
+    self.safety.safety_rx_hook(self._crz_ctrl(False))
+    self.assertTrue(self.safety.get_acc_main_on())
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+  def test_latch_does_not_survive_init(self):
+    self.safety.safety_rx_hook(self._btns(True))
+    self.safety.safety_rx_hook(self._btns(False))
+    self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, 0)
+    self.safety.init_tests()
+
+    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.assertTrue(self.safety.get_acc_main_on())
+    self.safety.safety_rx_hook(self._crz_ctrl(False))
+    self.assertFalse(self.safety.get_acc_main_on())
 
 
 if __name__ == "__main__":
