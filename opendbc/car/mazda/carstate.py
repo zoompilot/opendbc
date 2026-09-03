@@ -2,6 +2,7 @@ from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs, uds
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
+from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from opendbc.car.mazda.values import DBC, LKAS_LIMITS, CarControllerParams, MazdaFlags
 from opendbc.sunnypilot.car.mazda.carstate_ext import CarStateExt
 
@@ -277,8 +278,8 @@ class CarState(CarStateBase, CarStateExt):
     self.cancel_button = cp.vl["CRZ_BTNS"]["CAN_OFF"]
     self.resume_button = cp.vl["CRZ_BTNS"]["RES"]
     self.main_button = int(cp.vl["CRZ_BTNS"]["MODE_X"] == 1 and cp.vl["CRZ_BTNS"]["MODE_Y"] == 1)
-    # Trims without the physical TJA button hold this low, so the event never fires for them.
-    self.tja_button = int(cp.vl["CRZ_BTNS"]["TJA_BUTTON"] == 1)
+    # Only a car declared to have the physical TJA button reports it as the MADS switch.
+    self.tja_button = int(cp.vl["CRZ_BTNS"]["TJA_BUTTON"] == 1) if self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON else 0
 
     ret.buttonEvents = [
       *create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise}),
