@@ -69,7 +69,23 @@ class CarControllerParams:
   ACCEL_BREAKAWAY_T = 3.0  # s
   ACCEL_BREAKAWAY_OVERSHOOT = 0.75  # m/s2 above the plan the still-stopped ramp may climb
 
-  # Limit upward plan-command slew without delaying braking response.
+  # Shape positive commands like stock MRCC (tools/mazda_long/accel_profile.py, 158 stock routes).
+  # Stock never asks for more than these by speed (p99 of the accelerating command, no lead).
+  ACCEL_CEILING_BP = [0., 4., 9., 14., 18., 25.]  # m/s
+  ACCEL_CEILING_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s2
+  # Stock builds positive accel at +12 raw per 50 Hz frame (0.6 m/s3) once rolling, 99.3% of
+  # rising frames, and at its 1.25 m/s3 release ramp while pulling away. The plan steps faster
+  # than both, which is the driver-felt harshness. Rolling builds a third quicker than stock on
+  # purpose: the plan sees a lead pull away before the stock radar walk would. Applies above
+  # zero only: brake release keeps the looser windup below so braking is never held longer
+  # than the plan asks.
+  ACCEL_BUILD_BP = [3., 6.]   # m/s
+  ACCEL_BUILD_V = [1.25, 0.8]  # m/s3
+  # Stock lifts the throttle at no more than 40 raw per 50 Hz frame (2.0 m/s3) in 99.98% of
+  # falling positive frames. Applies to throttle modulation only (plan still >= 0); a plan
+  # asking for brake falls through to the winddown limit so braking is never delayed.
+  ACCEL_LIFT_LIMIT = -2.0  # m/s3
+  # Limit upward plan-command slew in the brake region without delaying braking response.
   ACCEL_WINDUP_LIMIT = 4.0 * DT_CTRL     # m/s2 per frame
   ACCEL_WINDDOWN_LIMIT = -10.0 * DT_CTRL  # m/s2 per frame, clips only the p99.9+ steps
 

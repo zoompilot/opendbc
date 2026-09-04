@@ -203,6 +203,15 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
         # Track overrides in accel_last so control resumes through the slew limiter.
         accel = rate_limit(accel, self.accel_last, CarControllerParams.ACCEL_WINDDOWN_LIMIT,
                            CarControllerParams.ACCEL_WINDUP_LIMIT)
+        if accel > 0.:
+          # Shape positive commands to stock MRCC's ceiling and build rate at this speed.
+          v_ego = CS.out.vEgoRaw
+          ceiling = float(np.interp(v_ego, CarControllerParams.ACCEL_CEILING_BP, CarControllerParams.ACCEL_CEILING_V))
+          build = float(np.interp(v_ego, CarControllerParams.ACCEL_BUILD_BP, CarControllerParams.ACCEL_BUILD_V)) * DT_CTRL
+          accel = min(accel, ceiling, max(self.accel_last, 0.) + build)
+        if self.accel_last > 0. and CC.actuators.accel >= 0.:
+          # Lift the throttle at stock's rate; a brake request bypasses this above.
+          accel = max(accel, self.accel_last + CarControllerParams.ACCEL_LIFT_LIMIT * DT_CTRL)
       if sm.car_has_hold:
         # Stop requesting brake hold after the body ECU takes ownership.
         accel = CarControllerParams.ACCEL_HOLD_LATCHED
