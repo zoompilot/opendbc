@@ -68,11 +68,13 @@ def test_engaged_frame_rates_and_counters(cc, cs):
   assert cc.long_counter == 50 and cc.radar_counter == 10
 
 
-@pytest.mark.parametrize("gap", [1, 2, 3])
-def test_gap_setting_mirrors_driver(cc, cs, gap):
+# leadDistanceBars counts up (1 closest, 3 farthest); DISTANCE_SETTING counts down (DBC:
+# 1 is 4 bars, 4 is 1 bar), so the wire carries 5 - bars.
+@pytest.mark.parametrize("bars, wire", [(1, 4), (2, 3), (3, 2)])
+def test_gap_setting_mirrors_driver(cc, cs, bars, wire):
   cc.frame = 0  # force emission on the first step
-  sends = step_long(cc, cs, gap=gap)
-  assert parse_frame(CRZ_CTRL, frame(sends, CRZ_CTRL))["DISTANCE_SETTING"] == gap
+  sends = step_long(cc, cs, gap=bars)
+  assert parse_frame(CRZ_CTRL, frame(sends, CRZ_CTRL))["DISTANCE_SETTING"] == wire
 
 
 def test_stop_emits_hold_then_relaxes(cc, cs):
