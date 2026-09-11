@@ -2,9 +2,9 @@ from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs, uds
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
-from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from opendbc.car.mazda.values import DBC, LKAS_LIMITS, CarControllerParams, MazdaFlags
 from opendbc.sunnypilot.car.mazda.carstate_ext import CarStateExt
+from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 
 ButtonType = structs.CarState.ButtonEvent.Type
 
@@ -13,6 +13,11 @@ STOCK_RADAR_ALIVE_FRAMES = int(CarControllerParams.STOCK_RADAR_ALIVE_T / DT_CTRL
 STOCK_RADAR_GUARD_FRAMES = round(CarControllerParams.STOCK_RADAR_GUARD_T / DT_CTRL)
 CANCEL_CONTEXT_FRAMES = int(CarControllerParams.CANCEL_CONTEXT_T / DT_CTRL)
 CAM_LANEINFO_FRESH_FRAMES = int(CarControllerParams.CAM_LANEINFO_FRESH_T / DT_CTRL)
+STOCK_CTS_ALERT_FRAMES = int(CarControllerParams.STOCK_CTS_ALERT_T / DT_CTRL)
+# Bus witnesses: independent vehicle messages whose silence says the bus is gone, not the radar.
+# Windows at the CANParser's own validity threshold, ten periods; a stricter window would revoke
+# radar ownership on a gap the parser still accepts. {message: (signal, fresh frames)}
+MAIN_CAN_WITNESSES = {"PEDALS": ("ACC_ACTIVE", round(0.2 / DT_CTRL)), "ENGINE_DATA": ("SPEED", round(0.1 / DT_CTRL))}
 
 
 class CarState(CarStateBase, CarStateExt):
@@ -28,16 +33,30 @@ class CarState(CarStateBase, CarStateExt):
     self.lkas_allowed_speed = False
     self.lkas_blocked = False
     self.lkas_effective = 0
+    self.lkas_track_state = False
     # LKAS non-delivery state is used only with the steer-to-zero EPS.
     self.params = CarControllerParams(CP)
     self.steer_undelivered_frames = 0
     self.steer_undelivered = False
     self.steer_undelivered_alert = False
     self.lkas_block_origin_speed: float | None = None
+    # The EPS's first engagement of the ignition cycle, asked for torque under standby (block
+    # and track) at a crawl, raised LKAS_FAULT 0.3 s in on three drives; it delivered nothing
+    # in that window on any start on record. Hold the request until it has delivered once,
+    # the standby lifts, or the car is rolling.
+    self.lkas_delivered = False
+    self.steer_first_engage_hold = False
     # Our 0x243 frames the panda refused since the last cycle, reported back on the can stream
     # with src 192 (bus 0 + 0xC0). Zero-torque refusals while disengaged are not counted.
     self.lkas_rejected = 0
     self.lkas_fault = False
+    # The camera's own TJA/CTS state from its 0x440: 0 off, 2 armed, 3 to 5 steering. Live,
+    # never latched; 0 when the camera is stale.
+    self.stock_tja = 0
+    # Raised by the controller once per arming episode when its camera presses did not clear
+    # stock_tja; consumed here into a stockLkas pulse.
+    self.stock_cts_stuck = False
+    self.stock_cts_alert_frames = 0
 
     self.distance_button = 0
     self.accel_button = 0
@@ -52,12 +71,20 @@ class CarState(CarStateBase, CarStateExt):
     self.cruise_enabled_blocked = True
     self.brake_pressed_prev = False
     self.stock_radar_silent_frames = 0
+    self.stock_radar_seen = False
+    self.main_can_silent_frames = {name: fresh for name, (_, fresh) in MAIN_CAN_WITNESSES.items()}
+    self.radar_bus_healthy = False
+    self.radar_control_active = False  # controller owns replacement traffic, read on the next update
+    self.radar_owned = False  # the silence guard passed on an owned radar: the engagement gate below
+    self.radar_restore_failed = False
+    self.radar_handback_active = False
     self.radar_was_silenced = False
     self.cancel_context_frames = 0
     self.cam_laneinfo_seen = False
     self.cam_laneinfo_silent_frames = 0
     self.cam_empty_seen = False
     self.radar_session_refused = False
+    self.radar_session_response = 0
     self.fsc_settled_frames = 0
     # The body ECU owns the standstill brake hold.
     self.brake_hold = False
@@ -68,14 +95,19 @@ class CarState(CarStateBase, CarStateExt):
 
   @property
   def stock_radar_alive(self) -> bool:
-    return self.stock_radar_silent_frames < STOCK_RADAR_ALIVE_FRAMES
+    return self.stock_radar_seen and self.stock_radar_silent_frames < STOCK_RADAR_ALIVE_FRAMES
 
   @property
   def stock_radar_gone(self) -> bool:
     # This silence duration establishes radar ownership rather than a dropped frame.
-    return self.stock_radar_silent_frames >= STOCK_RADAR_GUARD_FRAMES
+    return self.radar_bus_healthy and self.stock_radar_silent_frames >= STOCK_RADAR_GUARD_FRAMES
 
-  def update_steer_undelivered(self, v_ego_raw: float, lkas_request: float, lkas_blocked: bool, lkas_track_state: bool) -> None:
+  def update_steer_undelivered(self, v_ego_raw: float, lkas_request: float) -> None:
+    lkas_blocked, lkas_track_state = self.lkas_blocked, self.lkas_track_state
+    self.lkas_delivered |= self.lkas_effective != 0
+    self.steer_first_engage_hold = (not self.lkas_delivered and lkas_blocked and lkas_track_state and
+                                    v_ego_raw < self.params.STEER_UNDELIVERED_ALERT_ORIGIN_SPEED)
+
     # Latch sustained zero LKAS_EFFECTIVE for a real request before the camera faults. Clear
     # with LKAS_BLOCK because a zeroed command provides no delivery signal. Driver torque does
     # not gate entry because torque in the requested direction does not reduce the request.
@@ -156,7 +188,7 @@ class CarState(CarStateBase, CarStateExt):
     # LKAS_EFFECTIVE distinguishes partial delivery from a complete block.
     self.lkas_blocked = lkas_blocked
     self.lkas_effective = cp.vl["STEER_RATE"]["LKAS_EFFECTIVE"]
-    lkas_track_state = cp.vl["STEER_RATE"]["LKAS_TRACK_STATE"] == 1
+    self.lkas_track_state = cp.vl["STEER_RATE"]["LKAS_TRACK_STATE"] == 1
     # The 2022 EPS raises LKAS_FAULT once its 0x243 stream has stopped for about 0.6 s; the
     # camera's own fault follows 5.3 s later and neither clears before the next ignition cycle.
     # Decoded for the log and tooling; the driver-facing fault stays the camera's own.
@@ -165,7 +197,7 @@ class CarState(CarStateBase, CarStateExt):
     # frame carries nothing the controller needs; count the torque requests it turned away.
     self.lkas_rejected = sum(1 for v in can_parsers[Bus.loopback].vl_all["CAM_LKAS"]["LKAS_REQUEST"] if v != 0)
     if self.CP.flags & MazdaFlags.STEER_TO_ZERO_EPS:
-      self.update_steer_undelivered(ret.vEgoRaw, cp.vl["STEER_RATE"]["LKAS_REQUEST"], lkas_blocked, lkas_track_state)
+      self.update_steer_undelivered(ret.vEgoRaw, cp.vl["STEER_RATE"]["LKAS_REQUEST"])
 
     if not self.CP.flags & MazdaFlags.STEER_TO_ZERO_EPS:
       # LKAS is enabled at 52kph going up and disabled at 45kph going down
@@ -213,28 +245,49 @@ class CarState(CarStateBase, CarStateExt):
 
       # Block engagement until stock radar ownership is clear. Radar traffic after a completed
       # teardown is a fault and triggers the alpha-long recovery path.
+      self.radar_bus_healthy = True
+      for name, (signal, fresh) in MAIN_CAN_WITNESSES.items():
+        silent = 0 if len(cp.vl_all[name][signal]) > 0 else min(self.main_can_silent_frames[name] + 1, fresh)
+        self.main_can_silent_frames[name] = silent
+        self.radar_bus_healthy &= silent < fresh
       if len(cp.vl_all["CRZ_INFO"]["CTR"]) > 0:
+        self.stock_radar_seen = True
         self.stock_radar_silent_frames = 0
-      else:
+      elif self.radar_bus_healthy:
         self.stock_radar_silent_frames += 1
+      else:
+        # A missing vehicle bus is not proof of a silenced radar. Restart the observation
+        # guard on recovery instead of adopting an outage accumulated while disconnected.
+        self.stock_radar_silent_frames = STOCK_RADAR_ALIVE_FRAMES
 
-      # Accept positive session responses and NRC 0x78, which means response pending.
+      # Validate single-frame session responses; firmware-query ISO-TP fragments and
+      # unrelated service replies must not change session state.
       resp = cp.vl_all["RADAR_UDS_RESPONSE"]
-      self.radar_session_refused = any(
-        sid == 0x7F and sub == uds.SERVICE_TYPE.DIAGNOSTIC_SESSION_CONTROL and nrc != 0x78
-        for sid, sub, nrc in zip(resp["SID"], resp["SUB"], resp["NRC"], strict=True))
-      silenced = self.stock_radar_gone
-      ret.accFaulted = self.radar_was_silenced and not silenced
+      self.radar_session_refused = False
+      self.radar_session_response = 0
+      for pci, sid, sub, nrc in zip(resp["PCI"], resp["SID"], resp["SUB"], resp["NRC"], strict=True):
+        if pci == 3 and sid == 0x7F and sub == uds.SERVICE_TYPE.DIAGNOSTIC_SESSION_CONTROL and nrc != 0x78:
+          self.radar_session_refused = True
+        elif pci == 6 and sid == 0x50 and sub in (1, 2):
+          self.radar_session_response = int(sub)  # last positive session response this frame
+      # Ownership is established by the silence guard and then held on the controller's claim:
+      # the radar stays in its diagnostic session through a bus blip, so recovery does not
+      # re-run the guard. Stock traffic ends the claim on the alive window either way.
+      silenced = self.radar_control_active and not self.stock_radar_alive and (self.stock_radar_gone or self.radar_was_silenced)
+      ret.accFaulted = self.radar_restore_failed or (self.radar_was_silenced and self.stock_radar_alive and not self.radar_handback_active)
       self.radar_was_silenced |= silenced
+      self.radar_owned = silenced
 
-      # Gate enabled with available so a stock engagement inside the ownership guard cannot
-      # latch MADS. Require an idle transition before adopting a later engagement.
-      if not self.radar_was_silenced:
+      # available follows PEDALS arming from the first frame (the panda's acc_main_on reads the
+      # same sample); the radar guard gates enabled only, and a live stock engagement is not
+      # adopted the instant the guard lifts: it passes through idle once first. See
+      # docs/zoompilot/mazda-longitudinal.md, "Main is the main switch".
+      if not silenced:
         self.cruise_enabled_blocked = True
       elif not self.cruise_enabled:
         self.cruise_enabled_blocked = False
 
-      ret.cruiseState.available = self.cruise_available and self.radar_was_silenced
+      ret.cruiseState.available = self.cruise_available
       ret.cruiseState.enabled = self.cruise_enabled and not self.cruise_enabled_blocked
 
       # The FSC teardown gate requires fresh, settled CAM_LANEINFO without ERR_BIT. BIT2 is
@@ -280,6 +333,16 @@ class CarState(CarStateBase, CarStateExt):
     self.cam_lkas = cp_cam.vl["CAM_LKAS"]
     self.cam_laneinfo = cp_cam.vl["CAM_LANEINFO"]
     ret.steerFaultPermanent = cp_cam.vl["CAM_LKAS"]["ERR_BIT_1"] == 1
+    self.stock_tja = int(self.cam_laneinfo["TJA"]) if cam_laneinfo_fresh else 0
+
+    # The camera stayed armed through the controller's presses: one pulse of stockLkas, which
+    # the Mazda event hook turns into a one-shot warning. openpilot keeps steering; the panda
+    # blocks the camera's own command meanwhile.
+    if self.stock_cts_stuck:
+      self.stock_cts_stuck = False
+      self.stock_cts_alert_frames = STOCK_CTS_ALERT_FRAMES
+    ret.stockLkas = self.stock_cts_alert_frames > 0
+    self.stock_cts_alert_frames = max(self.stock_cts_alert_frames - 1, 0)
 
     # Decode distance, set-speed, resume, cancel, and main-button events.
     prev_distance_button = self.distance_button
