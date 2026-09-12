@@ -662,6 +662,7 @@ BO_ 359 MORE_GAS: 8 XXX
  SG_ NEW_SIGNAL_4 : 38|1@1+ (1,0) [0|3] "" XXX
  SG_ NEW_SIGNAL_5 : 37|1@0+ (1,0) [0|1] "" XXX
  SG_ NEW_SIGNAL_6 : 47|4@0+ (1,0) [0|255] "" XXX
+ SG_ CYL_DEACT_STATE : 63|8@0+ (1,0) [0|255] "" XXX
 
 BO_ 512 NEW_MSG_30: 8 XXX
  SG_ NEW_SIGNAL_1 : 6|7@0+ (1,0) [0|255] "" XXX
@@ -793,6 +794,7 @@ BO_ 1900 RADAR_UDS_RESPONSE: 8 XXX
 
 
 CM_ SG_ 357 GEAR "13P, 26R, 13N, 24D";
+CM_ SG_ 359 CYL_DEACT_STATE "41: all cylinders (also during fuel cut), 10-17: entry ramp, 20: two cylinders active, 30 and 40: exit back to 41";
 CM_ SG_ 539 CHKSUM "inverted sum of bytes 0-6, excluding the STOPPING and RESUME_UNLATCHING bits";
 CM_ SG_ 539 STOPPING "set while stopping to and holding at standstill; not counted in CHKSUM";
 CM_ SG_ 539 RESUME_UNLATCHING "pulses while releasing the standstill hold on resume; not counted in CHKSUM";
