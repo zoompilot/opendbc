@@ -93,3 +93,19 @@ class CarInterface(CarInterfaceBase):
                       "hint": "the selected platform bundle does not match the VIN's platform"})
 
     return ret
+
+  def update(self, can_packets):
+    """Latch the camera's last CAM_LANEINFO payload and staleness for the white-wheel HUD gate."""
+    # card sends [(t, frames), ...]; the model tests send one bare (t, frames) tuple. CANParser.update takes both.
+    if can_packets and not isinstance(can_packets[0], (list, tuple)):
+      can_packets = [can_packets]
+    raw, received = self.CS.cam_laneinfo_raw, False
+    for _t, frames in can_packets:
+      for msg in frames:
+        # tests pass CanData objects; card passes plain (addr, dat, src) tuples
+        addr, dat, src = (msg.address, msg.dat, msg.src) if hasattr(msg, "address") else msg
+        if addr == 0x440 and src == 2 and len(dat) == 8:
+          raw, received = bytes(dat), True
+    self.CS.cam_laneinfo_raw = raw
+    self.CS.cam_laneinfo_stale_frames = 0 if received else self.CS.cam_laneinfo_stale_frames + 1
+    return super().update(can_packets)

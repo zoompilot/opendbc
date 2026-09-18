@@ -74,6 +74,7 @@ class CarState(CarStateBase, CarStateExt):
     self.resume_button = 0
     self.main_button = 0
     self.tja_button = 0
+    # Active-low wheel MRCC master (CRZ_BTNS.BIT1), read from the bus-0 parser: a 0 is a press.
     self.mrcc_button = 0
     self.crz_btns_seen = False
 
@@ -95,6 +96,9 @@ class CarState(CarStateBase, CarStateExt):
     self.cancel_context_frames = 0
     self.cam_laneinfo_seen = False
     self.cam_laneinfo_silent_frames = 0
+    # The camera's last CAM_LANEINFO payload and its staleness, for the white-wheel HUD gate.
+    self.cam_laneinfo_raw: bytes | None = None
+    self.cam_laneinfo_stale_frames = CAM_LANEINFO_FRESH_FRAMES
     self.cam_empty_seen = False
     self.radar_session_refused = False
     self.radar_session_response = 0
@@ -109,6 +113,10 @@ class CarState(CarStateBase, CarStateExt):
   @property
   def stock_radar_alive(self) -> bool:
     return self.stock_radar_seen and self.stock_radar_silent_frames < STOCK_RADAR_ALIVE_FRAMES
+
+  @property
+  def cam_laneinfo_live(self) -> bool:
+    return self.cam_laneinfo_raw is not None and self.cam_laneinfo_stale_frames < CAM_LANEINFO_FRESH_FRAMES
 
   @property
   def stock_radar_gone(self) -> bool:
@@ -242,7 +250,7 @@ class CarState(CarStateBase, CarStateExt):
 
     acc_armed = cp.vl["PEDALS"]["ACC_OFF"] == 1
     acc_active = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
-    # Unfiltered, both longitudinal modes: the TJA-press cleanup reads it.
+    # Both longitudinal modes: the TJA-press cleanup and the white-wheel HUD gate read it.
     self.mrcc_armed_raw = acc_armed or acc_active
 
     if self.CP.openpilotLongitudinalControl:

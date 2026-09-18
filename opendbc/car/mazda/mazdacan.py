@@ -190,6 +190,67 @@ def create_alert_command(packer, cam_msg: dict, ldw: bool, steer_required: bool)
   return packer.make_can_msg("CAM_LANEINFO", 0, values)
 
 
+# The MADS white wheel: the dash draws it when the camera's own HUD frame carries TJA=2,
+# and the body reads the same frame. The white bit is only ever XORed into an exact
+# camera payload audited to be an idle frame, never a frame we composed. Every observed
+# FSC idle family on TJA-declared cars is enumerated: the OFF family with its
+# counter-nibble twins, the LINE_VISIBLE families and their high-beam variants, and the
+# partial-lane LANE_LINES=3/4 encodings. Exact bases only; do not widen to a field-based
+# rule until more captures are audited.
+MADS_HUD_SAFE_BASE_PAYLOADS = frozenset(bytes.fromhex(h) for h in (
+  "4201000000001040", "4201000000001060", "4221000000004040", "4221000000001040",
+  "4221000000001060", "4201000000004040", "0221000000000040", "4201000000000040",
+  "4221000000000040", "0221000000001040", "4361000000000040", "4102000000001040",
+  "4122000000001040", "4361000000000060", "4102000000004040", "4122000000004040",
+  "4221000000004060", "4122000000000040", "4103000000001040", "4104000000001040",
+  "4123000000000040", "4124000000000040", "4123000000001040", "4124000000001040",
+  "4123000000004040", "4124000000004040", "4102000000001060", "4102000000004060",
+  "4122000000001060", "4122000000004060", "0122000000000040", "0122000000004040",
+  "4202000000001040", "4102000000000040",
+))
+# OFF to WHITE is TJA 0 to 2 only: one bit, byte 4 0x20, XORed in, never a frame swap.
+MADS_HUD_WHITE_TJA_XOR = bytes.fromhex("0000000020000000")
+# 64-bit big-endian keep-mask over the bits an idle camera may still move between
+# samples: TJA (byte 4, 0x70), TJA_TRANSITION (byte 3, 0x0C), and the unnamed byte-3
+# transition bits 0x03. Do not clear byte-4 0x80 or unrelated byte-0 family bits.
+# Every allowlisted base carries zero in the masked bits, so no two bases share a key.
+CAM_LANEINFO_TJA_NORMALIZE_MASK = 0xFFFFFFF08FFFFFFF
+_MADS_HUD_SAFE_BASE_BY_INT = {
+  int.from_bytes(b, "big") & CAM_LANEINFO_TJA_NORMALIZE_MASK: b
+  for b in MADS_HUD_SAFE_BASE_PAYLOADS
+}
+
+
+def white_hud_allowlist_base(fsc_raw: bytes | None) -> bytes | None:
+  """The allowlisted idle base for the camera's current frame, TJA/transition bits ignored."""
+  if fsc_raw is None or len(fsc_raw) != 8:
+    return None
+  return _MADS_HUD_SAFE_BASE_BY_INT.get(
+    int.from_bytes(fsc_raw, "big") & CAM_LANEINFO_TJA_NORMALIZE_MASK
+  )
+
+
+def apply_mads_white_hud(fsc_raw: bytes | None, packed_dat: bytes, enabled: bool) -> bytes:
+  """Set TJA=2 on the camera's own allowlisted idle frame, and on nothing else.
+
+  packed_dat must be exactly the base the camera's current frame normalizes to: any other
+  payload, or an unknown camera frame, passes through untouched.
+  """
+  if not enabled or len(packed_dat) != 8:
+    return packed_dat
+  if packed_dat != white_hud_allowlist_base(fsc_raw):
+    return packed_dat
+  return bytes(a ^ b for a, b in zip(packed_dat, MADS_HUD_WHITE_TJA_XOR, strict=True))
+
+
+def is_mads_white_hud(dat: bytes) -> bool:
+  """True when dat is an allowlisted base with only the WHITE TJA bit set."""
+  if len(dat) != 8:
+    return False
+  base = bytes(a ^ b for a, b in zip(dat, MADS_HUD_WHITE_TJA_XOR, strict=True))
+  return base in MADS_HUD_SAFE_BASE_PAYLOADS and dat != base
+
+
 def create_button_cmd(packer, CP, counter, button):
   can = int(button == Buttons.CANCEL)
   res = int(button == Buttons.RESUME)
