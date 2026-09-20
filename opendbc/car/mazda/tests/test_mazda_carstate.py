@@ -722,3 +722,28 @@ class TestFirstEngageHold:
     kw.update(release)
     rig.step(100, 0, kw.pop('blocked'), **kw)
     assert not rig.CS.steer_first_engage_hold
+
+
+def test_intervention_bits_become_an_invalid_lkas_setting():
+  CI, pk = car_interface(alpha_long=False), packer()
+  healthy = pk.make_can_msg("CAM_SETTINGS", 2, {"LKAS_INERVENTION_ON1": 1, "ILKAS_NTERVENTION_ON2": 1})
+  assert not feed(CI, 0, healthy)[0].invalidLkasSetting
+  off = pk.make_can_msg("CAM_SETTINGS", 2, {"LKAS_INERVENTION_ON1": 0, "ILKAS_NTERVENTION_ON2": 0})
+  assert feed(CI, 1, off)[0].invalidLkasSetting
+  # the flag holds through the silent cycles between the message's arrivals
+  for i in range(2, 12):
+    assert feed(CI, i)[0].invalidLkasSetting
+  # either bit alone is a live setting: cameras assert them unevenly, so the
+  # single-bit states must not read as off
+  on1_only = pk.make_can_msg("CAM_SETTINGS", 2, {"LKAS_INERVENTION_ON1": 1, "ILKAS_NTERVENTION_ON2": 0})
+  assert not feed(CI, 12, on1_only)[0].invalidLkasSetting
+  on2_only = pk.make_can_msg("CAM_SETTINGS", 2, {"LKAS_INERVENTION_ON1": 0, "ILKAS_NTERVENTION_ON2": 1})
+  assert not feed(CI, 13, on2_only)[0].invalidLkasSetting
+
+
+def test_cam_settings_absence_never_reads_as_off():
+  # the parser's default zeros must not read as off on a car that never sends CAM_SETTINGS
+  CI = car_interface(alpha_long=False)
+  for i in range(10):
+    assert not feed(CI, i)[0].invalidLkasSetting
+

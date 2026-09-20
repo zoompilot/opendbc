@@ -308,11 +308,11 @@ class CarState(CarStateBase, CarStateExt):
     ret.cruiseState.speed = cp.vl["CRZ_EVENTS"]["CRZ_SPEED"] * CV.KPH_TO_MS
 
     # Stock LKAS must be switched on: the EPS applies no LKAS torque otherwise. LANE_LINES 0 is
-    # upstream's reading of the camera; LKAS_INERVENTION_ON1 is the setting itself, which the
-    # wheel's TJA/LAS button toggles. The setting frame is optional, so a car that never sends it
-    # reads on.
+    # upstream's reading of the camera; the CAM_SETTINGS intervention bits are the setting itself,
+    # which the wheel's TJA/LAS button toggles. Either bit set is an enabled setting, both clear is
+    # off. The setting frame is optional, so a car that never sends it reads on.
     if len(cp_cam.vl_all["CAM_SETTINGS"]["LKAS_INERVENTION_ON1"]) > 0:
-      self.lkas_setting_on = cp_cam.vl["CAM_SETTINGS"]["LKAS_INERVENTION_ON1"] == 1
+      self.lkas_setting_on = any(cp_cam.vl["CAM_SETTINGS"][s] for s in ("LKAS_INERVENTION_ON1", "ILKAS_NTERVENTION_ON2"))
     ret.invalidLkasSetting = (cam_laneinfo_fresh and cp_cam.vl["CAM_LANEINFO"]["LANE_LINES"] == 0) or not self.lkas_setting_on
 
     if ret.cruiseState.enabled:
@@ -384,10 +384,10 @@ class CarState(CarStateBase, CarStateExt):
     cam_messages = [
       # Read these optional camera messages without making them part of canValid.
       ("CAM_LANEINFO", float("nan")),
+      ("CAM_SETTINGS", float("nan")),
       ("CAM_TRAFFIC_SIGNS", float("nan")),
       ("CAM_EMPTY", float("nan")),
       ("CAM_PEDESTRIAN", float("nan")),
-      ("CAM_SETTINGS", float("nan")),
     ]
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], pt_messages, 0),
