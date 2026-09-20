@@ -139,18 +139,24 @@ def set_car_state(cs: CarState, out=None, *, brake_hold=False, stock_radar_alive
                   radar_bus_healthy=True, steer_undelivered=False,
                   lkas_blocked=False, lkas_effective=0, steer_first_engage_hold=False, lkas_allowed_speed=True, lkas_rejected=0,
                   lkas_fault=False, crz_btns_counter=0, stock_tja=0, hbc_request=False,
-                  cancel_button=0, accel_button=0, decel_button=0, **out_kwargs) -> CarState:
+                  cancel_button=0, accel_button=0, decel_button=0,
+                  tja_button=0, mrcc_button=0,
+                  mrcc_armed_raw=False, cruise_available=None, cruise_enabled=None,
+                  radar_handback_active=False,
+                  **out_kwargs) -> CarState:
   """Put the controller-facing state of a real CarState where a test wants it.
 
   Every keyword is reset to its default on each call, so a test that drives frame by frame
   gets the same semantics as a fresh state each frame. The stock-radar and FSC properties are
   derived from their frame counters, so those are what get seeded: a silent radar reads as
   gone (guard-long silence) unless a test is about the gap between the two windows.
+  The filtered cruise fields mirror cruiseState unless a test overrides them explicitly,
+  which is how a brake-dropout (raw low, filtered held) is staged.
   """
   cs.out = out if out is not None else car_state(**out_kwargs)
   cs.brake_hold = brake_hold
-  cs.cruise_enabled = cs.out.cruiseState.enabled
-  cs.cruise_available = cs.out.cruiseState.available
+  cs.cruise_enabled = cs.out.cruiseState.enabled if cruise_enabled is None else cruise_enabled
+  cs.cruise_available = cs.out.cruiseState.available if cruise_available is None else cruise_available
   cs.stock_radar_seen = True
   cs.radar_bus_healthy = radar_bus_healthy
   cs.radar_session_response = radar_session_response
@@ -178,6 +184,10 @@ def set_car_state(cs: CarState, out=None, *, brake_hold=False, stock_radar_alive
   cs.cancel_button = cancel_button
   cs.accel_button = accel_button
   cs.decel_button = decel_button
+  cs.tja_button = tja_button
+  cs.mrcc_button = mrcc_button
+  cs.mrcc_armed_raw = mrcc_armed_raw
+  cs.radar_handback_active = radar_handback_active
   return cs
 
 

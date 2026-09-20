@@ -14,7 +14,7 @@ from opendbc.car import Bus, DT_CTRL
 from opendbc.car import structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.mazda import mazdacan
-from opendbc.car.mazda.carstate import CAM_LANEINFO_FRESH_FRAMES
+from opendbc.car.mazda.carstate import ButtonType, CAM_LANEINFO_FRESH_FRAMES
 from opendbc.car.mazda.tests.conftest import car_interface, packer
 from opendbc.car.mazda.values import CarControllerParams
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
@@ -679,15 +679,15 @@ class TestTjaButtonEvents:
 
   def test_tja_press_emits_an_lkas_event(self):
     CI, pk = self._declared(), packer()
-    self._btns(CI, pk, 0, TJA_BUTTON=0)
-    ret = self._btns(CI, pk, 1, TJA_BUTTON=1)
+    self._btns(CI, pk, 0, TJA_BUTTON=0, BIT1=1)
+    ret = self._btns(CI, pk, 1, TJA_BUTTON=1, BIT1=1)
     assert [be.type for be in ret.buttonEvents] == [self.ButtonType.lkas]
     assert ret.buttonEvents[0].pressed
 
   def test_no_event_without_the_button(self):
     CI, pk = self._declared(), packer()
     for i in range(10):
-      ret = self._btns(CI, pk, i, TJA_BUTTON=0)
+      ret = self._btns(CI, pk, i, TJA_BUTTON=0, BIT1=1)
       assert not [be for be in ret.buttonEvents if be.type == self.ButtonType.lkas]
 
   def test_undeclared_ignores_the_bit(self):
@@ -785,3 +785,28 @@ def test_cam_settings_absence_never_reads_as_off():
   CI = car_interface(alpha_long=False)
   for i in range(10):
     assert not feed(CI, i)[0].invalidLkasSetting
+
+
+class TestMrccButtonEvent:
+  """The wheel's MRCC master press (CRZ_BTNS BIT1, active low) as a buttonEvent.
+
+  Declared cars publish mainCruise like any master button; undeclared cars never read the
+  bit, so an unknown idle level there cannot produce events.
+  """
+
+  def test_press_publishes_maincruise_on_a_declared_car(self):
+    CI = car_interface()
+    CI.CP_SP.flags |= MazdaFlagsSP.TJA_BUTTON
+    pk = packer()
+    ret, _ = feed(CI, 0, pk.make_can_msg("CRZ_BTNS", 0, {"BIT1": 1}))
+    assert not ret.buttonEvents
+    ret, _ = feed(CI, 1, pk.make_can_msg("CRZ_BTNS", 0, {"BIT1": 0, "BIT1_INV": 1}))
+    assert [(be.type, be.pressed) for be in ret.buttonEvents] == [(ButtonType.mainCruise, True)]
+
+  def test_press_is_invisible_on_an_undeclared_car(self):
+    CI = car_interface()
+    pk = packer()
+    ret, _ = feed(CI, 0, pk.make_can_msg("CRZ_BTNS", 0, {"BIT1": 1}))
+    ret, _ = feed(CI, 1, pk.make_can_msg("CRZ_BTNS", 0, {"BIT1": 0, "BIT1_INV": 1}))
+    assert not ret.buttonEvents
+    assert CI.CS.mrcc_button == 0

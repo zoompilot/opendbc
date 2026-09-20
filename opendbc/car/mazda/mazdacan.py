@@ -233,3 +233,16 @@ def create_button_cmd(packer, CP, counter, button):
   }
 
   return packer.make_can_msg("CRZ_BTNS", 0, values)
+
+
+def create_mrcc_off_cmd(packer, counter):
+  # The wheel's MRCC master press, active-low: every button bit 0 with its inversion 1,
+  # the master signature in BIT1/BIT1_INV plus BIT2/BIT3, counter plus one. Only the
+  # TJA-press cleanup sends it, and the panda pins the exact bytes in mazda_mrcc_off_msg_valid.
+  values = {
+    "CAN_OFF_INV": 1, "SET_P_INV": 1, "RES_INV": 1, "SET_M_INV": 1,
+    "DISTANCE_LESS_INV": 1, "DISTANCE_MORE_INV": 1, "MODE_X_INV": 1, "MODE_Y_INV": 1,
+    "BIT1_INV": 1, "BIT2": 1, "BIT3": 1,
+    "CTR": (counter + 1) % 16,
+  }
+  return packer.make_can_msg("CRZ_BTNS", 0, values)

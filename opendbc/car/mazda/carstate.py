@@ -74,9 +74,13 @@ class CarState(CarStateBase, CarStateExt):
     self.resume_button = 0
     self.main_button = 0
     self.tja_button = 0
+    self.mrcc_button = 0
+    self.crz_btns_seen = False
 
     self.cruise_available = False
     self.cruise_enabled = False
+    # Unfiltered PEDALS cruise state; the filtered public state bridges brake dropouts.
+    self.mrcc_armed_raw = False
     self.cruise_enabled_blocked = True
     self.brake_pressed_prev = False
     self.stock_radar_silent_frames = 0
@@ -236,11 +240,14 @@ class CarState(CarStateBase, CarStateExt):
     ret.stockFcw = (self.cam_empty_seen and cam_empty["STATUS"] != 0x7F) or \
                    ped["PED_WARNING"] == 1 or ped["BRAKE_WARNING"] == 1
 
+    acc_armed = cp.vl["PEDALS"]["ACC_OFF"] == 1
+    acc_active = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
+    # Unfiltered, both longitudinal modes: the TJA-press cleanup reads it.
+    self.mrcc_armed_raw = acc_armed or acc_active
+
     if self.CP.openpilotLongitudinalControl:
       # After radar teardown, derive cruise state from PEDALS. Hold the previous state through
       # brake-only samples where both cruise bits are transiently low.
-      acc_armed = cp.vl["PEDALS"]["ACC_OFF"] == 1
-      acc_active = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
       brake_free = not ret.brakePressed and not self.brake_pressed_prev
       # Retain wheel-cancel context until PEDALS reflects the main-state change.
       if cp.vl["CRZ_BTNS"]["CAN_OFF"] == 1:
@@ -359,6 +366,7 @@ class CarState(CarStateBase, CarStateExt):
     prev_cancel_button = self.cancel_button
     prev_resume_button = self.resume_button
     prev_main_button = self.main_button
+    prev_mrcc_button = self.mrcc_button
     prev_tja_button = self.tja_button
     self.distance_button = cp.vl["CRZ_BTNS"]["DISTANCE_LESS"]
     # SET_P is the wheel's increase button; RES is a distinct resume button.
@@ -368,6 +376,14 @@ class CarState(CarStateBase, CarStateExt):
     self.cancel_button = cp.vl["CRZ_BTNS"]["CAN_OFF"]
     self.resume_button = cp.vl["CRZ_BTNS"]["RES"]
     self.main_button = int(cp.vl["CRZ_BTNS"]["MODE_X"] == 1 and cp.vl["CRZ_BTNS"]["MODE_Y"] == 1)
+    # BIT1 is active-low: a 0 on the bus-0 parser is the wheel's MRCC master press. Gated on
+    # the declaration (an undeclared wheel's idle level is unknown) and held unpressed until
+    # the wheel's first frame: parser zeros before it would decode as a phantom press.
+    if self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON:
+      self.crz_btns_seen = self.crz_btns_seen or len(cp.vl_all["CRZ_BTNS"]["BIT1"]) > 0
+      self.mrcc_button = int(cp.vl["CRZ_BTNS"]["BIT1"] == 0) if self.crz_btns_seen else 0
+    else:
+      self.mrcc_button = 0
     # Only a car declared to have the physical TJA button reports it as the MADS switch.
     self.tja_button = int(cp.vl["CRZ_BTNS"]["TJA_BUTTON"] == 1) if self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON else 0
 
@@ -378,6 +394,8 @@ class CarState(CarStateBase, CarStateExt):
       *create_button_events(self.cancel_button, prev_cancel_button, {1: ButtonType.cancel}),
       *create_button_events(self.resume_button, prev_resume_button, {1: ButtonType.resumeCruise}),
       *create_button_events(self.main_button, prev_main_button, {1: ButtonType.mainCruise}),
+      # A held press of this button must freeze ICBM through the cruise button timers in the openpilot tree.
+      *create_button_events(self.mrcc_button, prev_mrcc_button, {1: ButtonType.mainCruise}),
       *create_button_events(self.tja_button, prev_tja_button, {1: ButtonType.lkas}),
     ]
 

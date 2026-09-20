@@ -800,5 +800,82 @@ class TestMazdaIgnition(unittest.TestCase):
     self.assertFalse(self.safety.get_ignition_can())
 
 
+class TestMazdaMrccOffCleanup(unittest.TestCase):
+  """The exact-bytes MRCC master tap that undoes the arm a physical TJA press causes."""
+
+  # Nonzero signals only; unlisted DBC signals pack as 0 (see create_mrcc_off_cmd).
+  MRCC_OFF_VALUES = {
+    "CAN_OFF_INV": 1, "SET_P_INV": 1, "RES_INV": 1, "SET_M_INV": 1,
+    "DISTANCE_LESS_INV": 1, "DISTANCE_MORE_INV": 1, "MODE_X_INV": 1, "MODE_Y_INV": 1,
+    "BIT1_INV": 1, "BIT2": 1, "BIT3": 1, "CTR": 4,
+  }
+
+  def setUp(self):
+    self.packer = CANPackerSafety("mazda_2017")
+    self.safety = libsafety_py.libsafety
+    self._init(tja_button=True)
+
+  def _init(self, tja_button, param=0):
+    self.safety.set_current_safety_param_sp(MazdaSafetyFlagsSP.TJA_BUTTON if tja_button else 0)
+    self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, param)
+    self.safety.init_tests()
+    self.safety.set_mads_params(True, False, False)
+
+  def tearDown(self):
+    self.safety.set_current_safety_param_sp(0)
+    self.safety.set_mads_params(False, False, False)
+
+  def _mrcc_off(self, **over):
+    values = dict(self.MRCC_OFF_VALUES)
+    values.update(over)
+    return self.packer.make_can_msg_safety("CRZ_BTNS", 0, values)
+
+  def _crz_ctrl(self, armed):
+    return self.packer.make_can_msg_safety("CRZ_CTRL", 0, {"CRZ_AVAILABLE": armed})
+
+  def _pedals(self, acc_off):
+    return self.packer.make_can_msg_safety("PEDALS", 0, {"ACC_OFF": acc_off})
+
+  def test_exact_tap_allowed_declared_and_armed(self):
+    # not controlling: this is the whole point of the exception
+    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.assertTrue(self.safety.safety_tx_hook(self._mrcc_off()))
+
+  def test_exact_tap_blocked_undeclared(self):
+    self._init(tja_button=False)
+    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
+
+  def test_exact_tap_blocked_when_cruise_not_armed(self):
+    self.safety.safety_rx_hook(self._crz_ctrl(False))
+    self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
+
+  def test_armed_tracks_pedals_after_teardown(self):
+    self._init(tja_button=True, param=MazdaSafetyFlags.LONG | MazdaSafetyFlags.STEER_TO_ZERO_EPS)
+    self.safety.safety_rx_hook(self._pedals(True))
+    self.assertTrue(self.safety.safety_tx_hook(self._mrcc_off()))
+    self.safety.safety_rx_hook(self._pedals(False))
+    self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
+
+  def test_lookalike_tap_is_blocked_everywhere(self):
+    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    for over in ({"SET_P": 1}, {"RES": 1}, {"TJA_BUTTON": 1}, {"BIT2": 0}, {"CTR": 12}):
+      with self.subTest(over=over):
+        msg = self._mrcc_off(**over)
+        # only the CTR variation stays valid; anything else is a composite command
+        allowed = over == {"CTR": 12}
+        self.assertEqual(allowed, self.safety.safety_tx_hook(msg))
+
+  def test_cancel_still_allowed_while_not_controlling(self):
+    self.safety.safety_rx_hook(self._crz_ctrl(False))
+    msg = self.packer.make_can_msg_safety("CRZ_BTNS", 0, {"CAN_OFF": 1})
+    self.assertTrue(self.safety.safety_tx_hook(msg))
+
+  def test_tja_bit_still_blocked_on_the_main_bus(self):
+    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    msg = self.packer.make_can_msg_safety("CRZ_BTNS", 0, {"TJA_BUTTON": 1})
+    self.assertFalse(self.safety.safety_tx_hook(msg))
+
+
 if __name__ == "__main__":
   unittest.main()
