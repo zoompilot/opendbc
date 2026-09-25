@@ -107,13 +107,13 @@ class TestFscSettleGate:
     # BIT2 is the camera's auto high-beam arming, relayed to the cluster through CRZ_CTRL
     CI = car_interface(alpha_long=True)
     feed_laneinfo(CI, BIT2_LATCHED, 1.0)
-    assert CI.CS.hbc_armed
+    assert CI.CS.hbc_request
     feed_laneinfo(CI, SETTLED, 1.0)
-    assert not CI.CS.hbc_armed
+    assert not CI.CS.hbc_request
     # a silent camera relays nothing
     feed_laneinfo(CI, BIT2_LATCHED, 1.0)
     feed_laneinfo(CI, None, CarControllerParams.CAM_LANEINFO_FRESH_T + 0.5)
-    assert not CI.CS.hbc_armed
+    assert not CI.CS.hbc_request
 
   def test_gate_starts_closed_before_any_camera_frame(self):
     # the parser reads all-zero before the first frame, which would otherwise look settled

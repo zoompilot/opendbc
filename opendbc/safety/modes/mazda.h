@@ -95,15 +95,6 @@ static bool mazda_empty_radar_track_msg_valid(const CANPacket_t *msg) {
   return valid;
 }
 
-// The one occupied 5/6 frame: the synthetic far object in slot 5 (mazdacan.py SYNTHETIC_TRACK),
-// camera bus only, byte-exact but for the counter nibble. The body bus carries the empty template.
-static bool mazda_synthetic_far_track_msg_valid(const CANPacket_t *msg) {
-  return (msg->addr == MAZDA_RADAR_TRACK_5) && (msg->bus == (unsigned char)MAZDA_CAM) &&
-         (msg->data[0] == 0xafU) && (msg->data[1] == 0x00U) && (msg->data[2] == 0xa4U) &&
-         (msg->data[3] == 0x00U) && (msg->data[4] == 0x1bU) && (msg->data[5] == 0xffU) &&
-         (msg->data[6] == 0x37U) && ((msg->data[7] & 0xf0U) == 0xc0U);
-}
-
 static bool mazda_synthetic_lead_radar_track_msg_valid(const CANPacket_t *msg) {
   // Permit only the distance and relative-velocity fields in the occupied-track template.
   return (msg->addr == MAZDA_RADAR_TRACK_4) &&
@@ -115,8 +106,7 @@ static bool mazda_synthetic_lead_radar_track_msg_valid(const CANPacket_t *msg) {
 static bool mazda_radar_track_msg_valid(const CANPacket_t *msg) {
   // Occupied tracks represent perception and remain valid while controls are disengaged.
   return mazda_empty_radar_track_msg_valid(msg) ||
-         mazda_synthetic_lead_radar_track_msg_valid(msg) ||
-         mazda_synthetic_far_track_msg_valid(msg);
+         mazda_synthetic_lead_radar_track_msg_valid(msg);
 }
 
 // track msgs coming from OP so that we know what CAM msgs to drop and what to forward

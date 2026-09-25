@@ -33,7 +33,6 @@ CRZ_CTRL = 0x21c
 CAM_LKAS = 0x243
 CAM_LANEINFO = 0x440
 LEAD_TRACK = 0x364
-SYNTHETIC_TRACK = 0x365
 RADAR_STATIC = 0x499
 RADAR_UDS = 0x764
 
@@ -139,7 +138,7 @@ def set_car_state(cs: CarState, out=None, *, brake_hold=False, stock_radar_alive
                   fsc_settled=True, radar_was_silenced=False, radar_session_refused=False, radar_session_response=0,
                   radar_bus_healthy=True, steer_undelivered=False,
                   lkas_blocked=False, lkas_effective=0, steer_first_engage_hold=False, lkas_allowed_speed=True, lkas_rejected=0,
-                  lkas_fault=False, crz_btns_counter=0, stock_tja=0, hbc_armed=False,
+                  lkas_fault=False, crz_btns_counter=0, stock_tja=0, hbc_request=False,
                   cancel_button=0, accel_button=0, decel_button=0, **out_kwargs) -> CarState:
   """Put the controller-facing state of a real CarState where a test wants it.
 
@@ -175,7 +174,7 @@ def set_car_state(cs: CarState, out=None, *, brake_hold=False, stock_radar_alive
   cs.lkas_fault = lkas_fault
   cs.crz_btns_counter = crz_btns_counter
   cs.stock_tja = stock_tja
-  cs.hbc_armed = hbc_armed
+  cs.hbc_request = hbc_request
   cs.cancel_button = cancel_button
   cs.accel_button = accel_button
   cs.decel_button = decel_button

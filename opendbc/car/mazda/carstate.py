@@ -59,9 +59,10 @@ class CarState(CarStateBase, CarStateExt):
     # LANE_LINES 0. Seen off on a CX-5 2022 for a whole drive after the controller pressed the
     # camera's button (7c735af5fce56485/00000105, 2026-09-12); never off on any other drive.
     self.lkas_setting_on = True
-    # The camera's HBC arm state, 0x440 BIT2. The stock radar relays it to CRZ_CTRL bit 13 for
-    # the dash's green HBC light; under the radar takeover the controller relays it instead.
-    self.hbc_armed = False
+    # The camera's high-beam request, 0x440 BIT2: it rises when the camera wants the lamps high
+    # (stock lamps follow within 0.2 s) and the stock radar relays it to CRZ_CTRL bit 13. Under
+    # the radar takeover the controller relays it instead.
+    self.hbc_request = False
 
     self.distance_button = 0
     self.accel_button = 0
@@ -343,7 +344,7 @@ class CarState(CarStateBase, CarStateExt):
     self.cam_laneinfo = cp_cam.vl["CAM_LANEINFO"]
     ret.steerFaultPermanent = cp_cam.vl["CAM_LKAS"]["ERR_BIT_1"] == 1
     self.stock_tja = int(self.cam_laneinfo["TJA"]) if cam_laneinfo_fresh else 0
-    self.hbc_armed = cam_laneinfo_fresh and self.cam_laneinfo["BIT2"] == 1
+    self.hbc_request = cam_laneinfo_fresh and self.cam_laneinfo["BIT2"] == 1
 
     # Decode distance, set-speed, resume, cancel, and main-button events.
     prev_distance_button = self.distance_button
