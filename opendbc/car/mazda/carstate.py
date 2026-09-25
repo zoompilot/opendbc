@@ -68,6 +68,9 @@ class CarState(CarStateBase, CarStateExt):
     self.hbc_request = False
 
     self.distance_button = 0
+    # The wheel's second distance button (farther). Upstream has one gapAdjustCruise type that
+    # cycles the personality one way; card publishes this level so the fork can step the other.
+    self.distance_more_button = 0
     self.accel_button = 0
     self.decel_button = 0
     self.cancel_button = 0
@@ -382,6 +385,7 @@ class CarState(CarStateBase, CarStateExt):
     prev_mrcc_button = self.mrcc_button
     prev_tja_button = self.tja_button
     self.distance_button = cp.vl["CRZ_BTNS"]["DISTANCE_LESS"]
+    self.distance_more_button = cp.vl["CRZ_BTNS"]["DISTANCE_MORE"]
     # SET_P is the wheel's increase button; RES is a distinct resume button.
     self.accel_button = cp.vl["CRZ_BTNS"]["SET_P"]
     self.decel_button = cp.vl["CRZ_BTNS"]["SET_M"]

@@ -847,3 +847,22 @@ class TestOceaniaCluster:
       CP.carVin = wmi + "TCBDY5M0123456"[:14]
       CP_SP = car_params_sp(CP, CAR.MAZDA_CX9_2021)
       assert bool(CP_SP.flags & MazdaFlagsSP.OCEANIA_CLUSTER) == expect, wmi
+
+
+class TestDistanceButtons:
+  """DISTANCE_LESS is upstream's one gapAdjustCruise button; DISTANCE_MORE is read as a level
+  for the fork's opposite-direction step and never becomes a button event."""
+
+  def _press(self, CI, less, more, i):
+    pk = packer()
+    return feed(CI, i, pk.make_can_msg("CRZ_BTNS", 0, {"DISTANCE_LESS": less, "DISTANCE_MORE": more, "CTR": i % 16}))[0]
+
+  def test_closer_is_the_gap_button_and_farther_is_a_level(self):
+    CI = car_interface(alpha_long=True)
+    self._press(CI, 0, 0, 0)
+    ret = self._press(CI, 1, 0, 1)
+    assert [be.type for be in ret.buttonEvents] == [structs.CarState.ButtonEvent.Type.gapAdjustCruise]
+    assert CI.CS.distance_more_button == 0
+    ret = self._press(CI, 0, 1, 2)
+    assert CI.CS.distance_more_button == 1
+    assert not any(be.type == structs.CarState.ButtonEvent.Type.gapAdjustCruise and be.pressed for be in ret.buttonEvents)
