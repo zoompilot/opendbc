@@ -838,16 +838,27 @@ class TestMazdaMrccOffCleanup(unittest.TestCase):
 
   def test_exact_tap_allowed_declared_and_armed(self):
     # not controlling: this is the whole point of the exception
-    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.safety.safety_rx_hook(self._pedals(True))
     self.assertTrue(self.safety.safety_tx_hook(self._mrcc_off()))
 
   def test_exact_tap_blocked_undeclared(self):
     self._init(tja_button=False)
-    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.safety.safety_rx_hook(self._pedals(True))
     self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
 
   def test_exact_tap_blocked_when_cruise_not_armed(self):
+    self.safety.safety_rx_hook(self._pedals(False))
+    self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
+
+  def test_arm_reads_pedals_not_the_radar_under_stock_long(self):
+    # carstate sends on PEDALS; the radar's CRZ_CTRL bit lags it and must not be the gate
+    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
+    self.safety.safety_rx_hook(self._pedals(True))
+    self.assertTrue(self.safety.safety_tx_hook(self._mrcc_off()))
     self.safety.safety_rx_hook(self._crz_ctrl(False))
+    self.assertTrue(self.safety.safety_tx_hook(self._mrcc_off()))
+    self.safety.safety_rx_hook(self._pedals(False))
     self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
 
   def test_armed_tracks_pedals_after_teardown(self):
@@ -858,7 +869,7 @@ class TestMazdaMrccOffCleanup(unittest.TestCase):
     self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
 
   def test_lookalike_tap_is_blocked_everywhere(self):
-    self.safety.safety_rx_hook(self._crz_ctrl(True))
+    self.safety.safety_rx_hook(self._pedals(True))
     for over in ({"SET_P": 1}, {"RES": 1}, {"TJA_BUTTON": 1}, {"BIT2": 0}, {"CTR": 12}):
       with self.subTest(over=over):
         msg = self._mrcc_off(**over)

@@ -47,7 +47,7 @@ static bool mazda_longitudinal = false;
 static bool mazda_tja_button = false;
 static bool mazda_steer_to_zero_eps = false;
 static bool mazda_legacy_fw_eps = false;
-// Live cruise arming, from CRZ_CTRL under stock longitudinal and PEDALS after teardown.
+// Live cruise arming from PEDALS, both longitudinal modes (carstate mrcc_armed_raw).
 static bool mazda_acc_armed = false;
 static uint32_t mazda_engage_btn_frames = 0U;
 static uint32_t mazda_cancel_context_frames = 0U;
@@ -139,7 +139,6 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
     if ((msg->addr == MAZDA_CRZ_CTRL) && !mazda_longitudinal) {
       bool cruise_engaged = msg->data[0] & 0x8U;
       pcm_cruise_check(cruise_engaged);
-      mazda_acc_armed = GET_BIT(msg, 17U);
       // With the TJA button owning lateral, MRCC no longer drives the MADS main edge: its
       // falling edge would exit the panda's lateral while the software's MADS stays on.
       if (!mazda_tja_button) {
@@ -174,13 +173,16 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
 
     if (msg->addr == MAZDA_PEDALS) {
       bool brake = (msg->data[0] & 0x10U);
+      // The live MRCC arm, both longitudinal modes, from the body's own PEDALS bits: the same
+      // source and frame carstate's mrcc_armed_raw reads, so the MRCC-off exception below
+      // opens on the frame the controller first sends (the radar's CRZ_CTRL bit lags it).
+      mazda_acc_armed = GET_BIT(msg, 2U) || GET_BIT(msg, 3U);
       if (mazda_longitudinal) {
         // Derive cruise state from PEDALS after radar teardown. Ignore transient brake-only
         // samples where both cruise bits are low.
         bool cruise_engaged = GET_BIT(msg, 3U);
         bool acc_armed = GET_BIT(msg, 2U) || cruise_engaged;
         bool brake_free = !brake && !brake_pressed_prev;
-        mazda_acc_armed = acc_armed;
 
         // Main mirrors carstate's cruise_available: it follows arming, and a both-low sample is
         // held under braking unless a wheel cancel explains it. Without the cancel path, main

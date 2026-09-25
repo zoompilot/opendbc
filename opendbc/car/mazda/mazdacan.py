@@ -196,12 +196,13 @@ def create_alert_command(packer, cam_msg: dict, ldw: bool, steer_required: bool)
 # FSC idle family on TJA-declared cars is enumerated: the OFF family with its
 # counter-nibble twins, the LINE_VISIBLE families and their high-beam variants, and the
 # partial-lane LANE_LINES=3/4 encodings. Exact bases only; do not widen to a field-based
-# rule until more captures are audited.
+# rule until more captures are audited. No base may carry ERR_BIT, NO_ERR_BIT (byte 1 0x40,
+# unsettled camera in carstate's takeover gate), LDW or a hands warning.
 MADS_HUD_SAFE_BASE_PAYLOADS = frozenset(bytes.fromhex(h) for h in (
   "4201000000001040", "4201000000001060", "4221000000004040", "4221000000001040",
   "4221000000001060", "4201000000004040", "0221000000000040", "4201000000000040",
-  "4221000000000040", "0221000000001040", "4361000000000040", "4102000000001040",
-  "4122000000001040", "4361000000000060", "4102000000004040", "4122000000004040",
+  "4221000000000040", "0221000000001040", "4102000000001040",
+  "4122000000001040", "4102000000004040", "4122000000004040",
   "4221000000004060", "4122000000000040", "4103000000001040", "4104000000001040",
   "4123000000000040", "4124000000000040", "4123000000001040", "4124000000001040",
   "4123000000004040", "4124000000004040", "4102000000001060", "4102000000004060",
