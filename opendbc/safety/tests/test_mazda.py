@@ -15,7 +15,7 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
   """Upstream's envelope with no safety param bit. The interface no longer emits it for any
   Mazda; the panda keeps it as the default, so it stays proven."""
 
-  TX_MSGS = [[0x243, 0], [0x09d, 0], [0x440, 0], [0x09d, 2]]
+  TX_MSGS = [[0x243, 0], [0x09d, 0], [0x440, 0]]
   STANDSTILL_THRESHOLD = .1
   RELAY_MALFUNCTION_ADDRS = {0: (0x243, 0x440)}
   # camera 0x243/0x440 frames forward while openpilot is not controlling
@@ -200,27 +200,16 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
     values.update(overrides)
     return self.packer.make_can_msg_safety("CRZ_BTNS", 2, values)
 
-  def test_cam_tja_press(self):
-    # openpilot presses the camera's own TJA/CTS off on the camera bus whenever it is armed, so
-    # the two lane-centering systems never run at once and a MADS-off press cannot hand the
-    # wheel to the camera. Accepted in all eight states of test_stock_passthrough (the frame only
-    # reaches the camera), and only byte-exact: the TJA bit over the wheel's idle pattern, any
-    # counter, no other button
-    self.assertEqual(bytes.fromhex("0009ffd400000000"), bytes(self.packer.make_can_msg("CRZ_BTNS", 2, {
-      "TJA_BUTTON": 1, "DISTANCE_LESS_INV": 1, "BIT1": 1, "BIT2": 1, "BIT3": 1, "CAN_OFF_INV": 1, "RES_INV": 1, "SET_P_INV": 1,
-      "SET_M_INV": 1, "DISTANCE_MORE_INV": 1, "MODE_X_INV": 1, "MODE_Y_INV": 1, "CTR": 5})[1]))
+  def test_no_button_reaches_the_camera(self):
+    # openpilot never writes CRZ_BTNS on the camera bus: the TJA press there switches the
+    # car's own lane-keep setting off (CAM_SETTINGS), after which the EPS applies no LKAS torque
     for mads in (False, True):
       self.safety.set_mads_params(mads, False, False)
       for controls_allowed, controls_allowed_lateral in [(False, False), (True, False), (False, True), (True, True)]:
         self.safety.set_controls_allowed(controls_allowed)
         self.safety.set_controls_allowed_lateral(controls_allowed_lateral)
         for ctr in range(16):
-          self.assertTrue(self._tx(self._cam_tja_press(ctr=ctr)), f"{mads=} {controls_allowed=} {controls_allowed_lateral=} {ctr=}")
-        # anything else on the camera-side address is refused in every state
-        for other in ({"TJA_BUTTON": 0}, {"CAN_OFF": 1, "CAN_OFF_INV": 0}, {"RES": 1, "RES_INV": 0}, {"SET_P": 1, "SET_P_INV": 0},
-                      {"SET_M": 1, "SET_M_INV": 0}, {"DISTANCE_LESS": 1, "DISTANCE_LESS_INV": 0}, {"MODE_X": 1, "MODE_X_INV": 0},
-                      {"MODE_Y": 1, "MODE_Y_INV": 0}, {"BIT1": 0}, {"BIT2": 0}, {"BIT3": 0}):
-          self.assertFalse(self._tx(self._cam_tja_press(**other)), f"{other=} {mads=} {controls_allowed=} {controls_allowed_lateral=}")
+          self.assertFalse(self._tx(self._cam_tja_press(ctr=ctr)), f"{mads=} {controls_allowed=} {controls_allowed_lateral=} {ctr=}")
         self.assertFalse(self._tx(make_msg(2, 0x09d, 8)))
     self.safety.set_mads_params(False, False, False)
 
@@ -380,7 +369,7 @@ class TestMazdaLongitudinalSafety(TestMazdaSteerToZeroEpsSafety, common.Longitud
   """openpilot longitudinal is only offered on steer-to-zero EPS platforms, so LONG always
   travels with that bit."""
 
-  TX_MSGS = [[0x243, 0], [0x09d, 0], [0x440, 0], [0x09d, 2], [0x21b, 0], [0x21c, 0], [0x499, 0],
+  TX_MSGS = [[0x243, 0], [0x09d, 0], [0x440, 0], [0x21b, 0], [0x21c, 0], [0x499, 0],
              [0x361, 0], [0x362, 0], [0x363, 0], [0x364, 0], [0x365, 0], [0x366, 0], [0x764, 0],
              [0x21b, 2], [0x21c, 2], [0x499, 2], [0x361, 2], [0x362, 2], [0x363, 2], [0x364, 2], [0x365, 2], [0x366, 2]]
 

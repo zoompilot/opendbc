@@ -14,7 +14,7 @@ from opendbc.car import Bus, DT_CTRL
 from opendbc.car import structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.mazda import mazdacan
-from opendbc.car.mazda.carstate import CAM_LANEINFO_FRESH_FRAMES, STOCK_CTS_ALERT_FRAMES
+from opendbc.car.mazda.carstate import CAM_LANEINFO_FRESH_FRAMES
 from opendbc.car.mazda.tests.conftest import car_interface, packer
 from opendbc.car.mazda.values import CarControllerParams
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
@@ -688,18 +688,6 @@ class TestStockTja:
       assert CI.CS.stock_tja == 4
     CI.update([(t_ns(CAM_LANEINFO_FRESH_FRAMES), [])])
     assert CI.CS.stock_tja == 0
-
-  def test_the_controllers_stuck_flag_is_one_stocklkas_pulse(self):
-    # the controller raises stock_cts_stuck once per arming episode; carstate consumes it into a
-    # short stockLkas pulse (the alert's own duration does the showing) and never repeats it
-    CI, pk = car_interface(alpha_long=False), packer()
-    assert not self.step(CI, pk, 0, 4).stockLkas
-    CI.CS.stock_cts_stuck = True
-    for i in range(1, 1 + STOCK_CTS_ALERT_FRAMES):
-      assert self.step(CI, pk, i, 4).stockLkas
-    assert not CI.CS.stock_cts_stuck
-    for i in range(1 + STOCK_CTS_ALERT_FRAMES, 200):
-      assert not self.step(CI, pk, i, 4).stockLkas
 
 
 class TestFirstEngageHold:

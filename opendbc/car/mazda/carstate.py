@@ -13,7 +13,6 @@ STOCK_RADAR_ALIVE_FRAMES = int(CarControllerParams.STOCK_RADAR_ALIVE_T / DT_CTRL
 STOCK_RADAR_GUARD_FRAMES = round(CarControllerParams.STOCK_RADAR_GUARD_T / DT_CTRL)
 CANCEL_CONTEXT_FRAMES = int(CarControllerParams.CANCEL_CONTEXT_T / DT_CTRL)
 CAM_LANEINFO_FRESH_FRAMES = int(CarControllerParams.CAM_LANEINFO_FRESH_T / DT_CTRL)
-STOCK_CTS_ALERT_FRAMES = int(CarControllerParams.STOCK_CTS_ALERT_T / DT_CTRL)
 # Bus witnesses: independent vehicle messages whose silence says the bus is gone, not the radar.
 # Windows at the CANParser's own validity threshold, ten periods; a stricter window would revoke
 # radar ownership on a gap the parser still accepts. {message: (signal, fresh frames)}
@@ -51,12 +50,15 @@ class CarState(CarStateBase, CarStateExt):
     self.lkas_rejected = 0
     self.lkas_fault = False
     # The camera's own TJA/CTS state from its 0x440: 0 off, 2 armed, 3 to 5 steering. Live,
-    # never latched; 0 when the camera is stale.
+    # never latched; 0 when the camera is stale. Diagnostic only: the panda vetoes the camera's
+    # command whenever openpilot steers, and nothing here may press the camera's button (below).
     self.stock_tja = 0
-    # Raised by the controller once per arming episode when its camera presses did not clear
-    # stock_tja; consumed here into a stockLkas pulse.
-    self.stock_cts_stuck = False
-    self.stock_cts_alert_frames = 0
+    # CAM_SETTINGS LKAS_INERVENTION_ON1: the car's own lane-keep switch, the wheel's TJA/LAS
+    # button. The EPS echoes every LKAS request but applies none of it while this is off
+    # (LKAS_EFFECTIVE 0, no LKAS_BLOCK, no fault), so it is an invalidLkasSetting like
+    # LANE_LINES 0. Seen off on a CX-5 2022 for a whole drive after the controller pressed the
+    # camera's button (7c735af5fce56485/00000105, 2026-09-12); never off on any other drive.
+    self.lkas_setting_on = True
 
     self.distance_button = 0
     self.accel_button = 0
@@ -305,9 +307,13 @@ class CarState(CarStateBase, CarStateExt):
     ret.cruiseState.standstill = cp.vl["PEDALS"]["STANDSTILL"] == 1 and not self.CP.openpilotLongitudinalControl
     ret.cruiseState.speed = cp.vl["CRZ_EVENTS"]["CRZ_SPEED"] * CV.KPH_TO_MS
 
-    # Stock LKAS must be active.
-    # TODO: is this needed?
-    ret.invalidLkasSetting = cam_laneinfo_fresh and cp_cam.vl["CAM_LANEINFO"]["LANE_LINES"] == 0
+    # Stock LKAS must be switched on: the EPS applies no LKAS torque otherwise. LANE_LINES 0 is
+    # upstream's reading of the camera; LKAS_INERVENTION_ON1 is the setting itself, which the
+    # wheel's TJA/LAS button toggles. The setting frame is optional, so a car that never sends it
+    # reads on.
+    if len(cp_cam.vl_all["CAM_SETTINGS"]["LKAS_INERVENTION_ON1"]) > 0:
+      self.lkas_setting_on = cp_cam.vl["CAM_SETTINGS"]["LKAS_INERVENTION_ON1"] == 1
+    ret.invalidLkasSetting = (cam_laneinfo_fresh and cp_cam.vl["CAM_LANEINFO"]["LANE_LINES"] == 0) or not self.lkas_setting_on
 
     if ret.cruiseState.enabled:
       if not self.lkas_allowed_speed and self.acc_active_last:
@@ -334,15 +340,6 @@ class CarState(CarStateBase, CarStateExt):
     self.cam_laneinfo = cp_cam.vl["CAM_LANEINFO"]
     ret.steerFaultPermanent = cp_cam.vl["CAM_LKAS"]["ERR_BIT_1"] == 1
     self.stock_tja = int(self.cam_laneinfo["TJA"]) if cam_laneinfo_fresh else 0
-
-    # The camera stayed armed through the controller's presses: one pulse of stockLkas, which
-    # the Mazda event hook turns into a one-shot warning. openpilot keeps steering; the panda
-    # blocks the camera's own command meanwhile.
-    if self.stock_cts_stuck:
-      self.stock_cts_stuck = False
-      self.stock_cts_alert_frames = STOCK_CTS_ALERT_FRAMES
-    ret.stockLkas = self.stock_cts_alert_frames > 0
-    self.stock_cts_alert_frames = max(self.stock_cts_alert_frames - 1, 0)
 
     # Decode distance, set-speed, resume, cancel, and main-button events.
     prev_distance_button = self.distance_button
@@ -390,6 +387,7 @@ class CarState(CarStateBase, CarStateExt):
       ("CAM_TRAFFIC_SIGNS", float("nan")),
       ("CAM_EMPTY", float("nan")),
       ("CAM_PEDESTRIAN", float("nan")),
+      ("CAM_SETTINGS", float("nan")),
     ]
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], pt_messages, 0),

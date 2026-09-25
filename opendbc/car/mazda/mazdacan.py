@@ -186,18 +186,17 @@ def create_alert_command(packer, cam_msg: dict, ldw: bool, steer_required: bool)
   return packer.make_can_msg("CAM_LANEINFO", 0, values)
 
 
-def create_button_cmd(packer, CP, counter, button, bus=0):
+def create_button_cmd(packer, CP, counter, button):
   can = int(button == Buttons.CANCEL)
   res = int(button == Buttons.RESUME)
   inc = int(button == Buttons.SET_PLUS)
   dec = int(button == Buttons.SET_MINUS)
-  # Only ever on the camera bus: the panda refuses it on the car's side, where it would toggle
-  # MADS and arm MRCC in the body.
-  tja = int(button == Buttons.TJA)
-  assert not (tja and bus == 0)
 
   values = {
-    "TJA_BUTTON": tja,
+    # Never pressed by openpilot, on either bus. On the car's side it toggles MADS and arms
+    # MRCC; on the camera's side it is the car's lane-keep switch (CAM_SETTINGS
+    # LKAS_INERVENTION_ON1), and with that off the EPS applies no LKAS torque at all.
+    "TJA_BUTTON": 0,
 
     "CAN_OFF": can,
     "CAN_OFF_INV": (can + 1) % 2,
@@ -229,4 +228,4 @@ def create_button_cmd(packer, CP, counter, button, bus=0):
     "CTR": (counter + 1) % 16,
   }
 
-  return packer.make_can_msg("CRZ_BTNS", bus, values)
+  return packer.make_can_msg("CRZ_BTNS", 0, values)

@@ -216,20 +216,6 @@ static bool mazda_openpilot_controlling(void) {
   return controls_allowed_lateral || (controls_allowed && !m_mads_state.system_enabled);
 }
 
-// The one CRZ_BTNS frame openpilot may put on the camera bus: the TJA button pressed over the
-// wheel's idle pattern (00 09 ff Cx 00 00 00 00, Cx = MODE_X_INV, MODE_Y_INV and the counter),
-// no other button. It presses the camera's own TJA/CTS off whenever the camera is armed, so the
-// two lane-centering systems never run at once and the camera never takes the wheel behind a
-// MADS-off press. Accepted in every state: the frame only reaches the camera and can only
-// toggle its lane centering, which the wheel button does anyway; the camera's torque is still
-// vetoed whenever openpilot steers (docs/zoompilot/mazda-lateral.md, "The camera's own TJA/CTS
-// state").
-static bool mazda_cam_tja_press_msg_valid(const CANPacket_t *msg) {
-  return (msg->data[0] == 0x00U) && (msg->data[1] == 0x09U) && (msg->data[2] == 0xffU) &&
-         ((msg->data[3] & 0xc3U) == 0xc0U) && (msg->data[4] == 0x00U) && (msg->data[5] == 0x00U) &&
-         (msg->data[6] == 0x00U) && (msg->data[7] == 0x00U);
-}
-
 static bool mazda_tx_hook(const CANPacket_t *msg) {
   // Stock pre-2022 EPS envelope.
   const TorqueSteeringLimits MAZDA_STEERING_LIMITS = {
@@ -351,13 +337,6 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
     }
   }
 
-  if ((msg->bus == (unsigned char)MAZDA_CAM) && (msg->addr == MAZDA_CRZ_BTNS)) {
-    // The camera-side press exists only to switch the camera's TJA/CTS off: byte-exact, any state.
-    if (!mazda_cam_tja_press_msg_valid(msg)) {
-      tx = false;
-    }
-  }
-
   return tx;
 }
 
@@ -381,8 +360,6 @@ static safety_config mazda_init(uint16_t param) {
     {MAZDA_LKAS, 0, 8, .check_relay = true, .disable_static_blocking = true},
     {MAZDA_CRZ_BTNS, 0, 8, .check_relay = false},
     {MAZDA_LKAS_HUD, 0, 8, .check_relay = true, .disable_static_blocking = true},
-    // The camera press: no relay check, so the wheel's own 0x09d keeps forwarding to the camera.
-    {MAZDA_CRZ_BTNS, MAZDA_CAM, 8, .check_relay = false},
   };
 
 // Replaced-radar addresses omit relay checks because the radar remains live during boot and
@@ -391,7 +368,6 @@ static safety_config mazda_init(uint16_t param) {
     {MAZDA_LKAS, 0, 8, .check_relay = true, .disable_static_blocking = true},
     {MAZDA_CRZ_BTNS, 0, 8, .check_relay = false},
     {MAZDA_LKAS_HUD, 0, 8, .check_relay = true, .disable_static_blocking = true},
-    {MAZDA_CRZ_BTNS, MAZDA_CAM, 8, .check_relay = false},
     {MAZDA_CRZ_INFO, 0, 8, .check_relay = false},
     {MAZDA_CRZ_CTRL, 0, 8, .check_relay = false},
     {MAZDA_RADAR_STATIC, 0, 8, .check_relay = false},

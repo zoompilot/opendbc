@@ -36,19 +36,10 @@ def test_alert_command_relays_state_but_not_the_tja_churn(packer):
   assert out["TJA"] == 0 and out["TJA_TRANSITION"] == 0
 
 
-@pytest.mark.parametrize("counter", range(16))
-def test_camera_tja_press_bytes(packer, counter):
-  # the wheel's idle pattern with the TJA bit, counter plus one, on the camera bus only
-  # (tja_cts_route_29: byte 1 0x01 idle, 0x09 pressed; the panda accepts nothing else there)
-  addr, dat, bus = mazdacan.create_button_cmd(packer, None, counter, Buttons.TJA, bus=2)
-  assert (addr, bus) == (0x09d, 2)
-  assert dat == bytes([0x00, 0x09, 0xff, 0xc0 | (((counter + 1) % 16) << 2), 0, 0, 0, 0])
-  with pytest.raises(AssertionError):
-    mazdacan.create_button_cmd(packer, None, counter, Buttons.TJA)
-
-
-def test_car_side_buttons_never_carry_the_tja_bit(packer):
-  for button in (Buttons.CANCEL, Buttons.RESUME, Buttons.SET_PLUS, Buttons.SET_MINUS):
+def test_buttons_never_carry_the_tja_bit(packer):
+  # never pressed by openpilot on either bus: on the car's side it toggles MADS and arms MRCC,
+  # on the camera's side it switches the car's own lane-keep setting off
+  for button in (Buttons.CANCEL, Buttons.RESUME, Buttons.SET_PLUS, Buttons.SET_MINUS, Buttons.TJA):
     _, dat, bus = mazdacan.create_button_cmd(packer, None, 3, button)
     assert bus == 0 and not dat[1] & 0x08
 
