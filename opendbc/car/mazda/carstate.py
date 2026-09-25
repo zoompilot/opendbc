@@ -59,6 +59,9 @@ class CarState(CarStateBase, CarStateExt):
     # LANE_LINES 0. Seen off on a CX-5 2022 for a whole drive after the controller pressed the
     # camera's button (7c735af5fce56485/00000105, 2026-09-12); never off on any other drive.
     self.lkas_setting_on = True
+    # Last frame's invalidLkasSetting: with the setting off the EPS applies nothing by design,
+    # so the non-delivery latch has nothing to measure and must not hold or alert.
+    self.lkas_setting_invalid = False
     # The camera's high-beam request, 0x440 BIT2: it rises when the camera wants the lamps high
     # (stock lamps follow within 0.2 s) and the stock radar relays it to CRZ_CTRL bit 13. Under
     # the radar takeover the controller relays it instead.
@@ -115,9 +118,11 @@ class CarState(CarStateBase, CarStateExt):
                                     v_ego_raw < self.params.STEER_UNDELIVERED_ALERT_ORIGIN_SPEED)
 
     # Latch sustained zero LKAS_EFFECTIVE for a real request before the camera faults. Clear
-    # with LKAS_BLOCK because a zeroed command provides no delivery signal. Driver torque does
-    # not gate entry because torque in the requested direction does not reduce the request.
-    if not lkas_blocked:
+    # with LKAS_BLOCK because a zeroed command provides no delivery signal, and while the car's
+    # own lane-keep setting is off because non-delivery is then the expected state. Driver
+    # torque does not gate entry because torque in the requested direction does not reduce the
+    # request.
+    if not lkas_blocked or self.lkas_setting_invalid:
       self.steer_undelivered_frames = 0
       self.steer_undelivered = False
       self.steer_undelivered_alert = False
@@ -318,6 +323,7 @@ class CarState(CarStateBase, CarStateExt):
     if len(cp_cam.vl_all["CAM_SETTINGS"]["LKAS_INERVENTION_ON1"]) > 0:
       self.lkas_setting_on = any(cp_cam.vl["CAM_SETTINGS"][s] for s in ("LKAS_INERVENTION_ON1", "ILKAS_NTERVENTION_ON2"))
     ret.invalidLkasSetting = (cam_laneinfo_fresh and cp_cam.vl["CAM_LANEINFO"]["LANE_LINES"] == 0) or not self.lkas_setting_on
+    self.lkas_setting_invalid = ret.invalidLkasSetting
 
     if ret.cruiseState.enabled:
       if not self.lkas_allowed_speed and self.acc_active_last:

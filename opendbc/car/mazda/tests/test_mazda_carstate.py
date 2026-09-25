@@ -544,6 +544,35 @@ class TestSteerUndeliveredLatch:
     assert not rig.CS.steer_undelivered
     assert not ret.steerFaultTemporary
 
+  def test_lane_keep_setting_off_clears_and_inhibits_the_latch(self):
+    # With the car's own lane-keep setting off the EPS applies nothing by design (route
+    # 00000105): the latch clears, cannot re-arm, and the alert never fires. Both the CAM_SETTINGS
+    # reading and LANE_LINES 0 count as the setting being off.
+    for off in ({"LKAS_INERVENTION_ON1": 0, "ILKAS_NTERVENTION_ON2": 0}, None):
+      rig = UndeliveredRig()
+      for _ in range(rig.params.STEER_UNDELIVERED_FRAMES + 5):
+        rig.step(600, 0, 1)
+      assert rig.CS.steer_undelivered
+      if off is not None:
+        msg = rig.packer.make_can_msg("CAM_SETTINGS", 2, off)
+      else:
+        msg = rig.packer.make_can_msg("CAM_LANEINFO", 2, {"LANE_LINES": 0})
+      rig.frame += 1
+      ret, _ = feed(rig.CI, rig.frame, msg)
+      assert ret.invalidLkasSetting
+      hold = rig.params.STEER_UNDELIVERED_FRAMES + rig.params.STEER_UNDELIVERED_ALERT_FRAMES + 50
+      for _ in range(hold):
+        ret = rig.step(600, 0, 1)
+      assert not rig.CS.steer_undelivered
+      assert not ret.steerFaultTemporary
+      if off is not None:
+        # the setting back on: the latch measures again
+        rig.frame += 1
+        feed(rig.CI, rig.frame, rig.packer.make_can_msg("CAM_SETTINGS", 2, {"LKAS_INERVENTION_ON1": 1, "ILKAS_NTERVENTION_ON2": 1}))
+        for _ in range(rig.params.STEER_UNDELIVERED_FRAMES + 5):
+          rig.step(600, 0, 1)
+        assert rig.CS.steer_undelivered
+
   def test_small_or_delivered_requests_never_latch(self):
     rig = UndeliveredRig()
     for _ in range(200):
