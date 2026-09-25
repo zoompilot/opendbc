@@ -30,7 +30,7 @@ RADAR_UDS_RESP = 0x76c
 # (GSH7-67XK2-U). Only byte 1 differs: bit 5 is BIT2, bit 6 is NO_ERR_BIT.
 BOOTING = bytes([0x42, 0b01000001, 0, 0, 0, 0, 0, 0])       # NO_ERR_BIT set: still booting
 SETTLED = bytes([0x42, 0b00000001, 0, 0, 0, 0, 0, 0])       # markers clear: settled
-BIT2_LATCHED = bytes([0x41, 0b00100001, 0, 0, 0, 0, 0, 0])  # BIT2 stuck high for a whole cycle
+BIT2_LATCHED = bytes([0x41, 0b00100001, 0, 0, 0, 0, 0, 0])  # BIT2 (HBC armed) high for a whole cycle
 FAULTED = bytes([0x42, 0b00000001, 0, 0, 0, 0x01, 0, 0])    # ERR_BIT (bit 40) set
 
 # Exercise CAM_LANEINFO at its longest measured period so freshness tests match the bus cadence.
@@ -102,6 +102,18 @@ class TestFscSettleGate:
     feed_laneinfo(CI, None, CarControllerParams.CAM_LANEINFO_FRESH_T + 0.5)
     assert not feed_laneinfo(CI, SETTLED, SETTLE_T * 0.5)
     assert feed_laneinfo(CI, SETTLED, SETTLE_T * 0.6)
+
+  def test_hbc_arming_follows_bit2_while_fresh(self):
+    # BIT2 is the camera's auto high-beam arming, relayed to the cluster through CRZ_CTRL
+    CI = car_interface(alpha_long=True)
+    feed_laneinfo(CI, BIT2_LATCHED, 1.0)
+    assert CI.CS.hbc_armed
+    feed_laneinfo(CI, SETTLED, 1.0)
+    assert not CI.CS.hbc_armed
+    # a silent camera relays nothing
+    feed_laneinfo(CI, BIT2_LATCHED, 1.0)
+    feed_laneinfo(CI, None, CarControllerParams.CAM_LANEINFO_FRESH_T + 0.5)
+    assert not CI.CS.hbc_armed
 
   def test_gate_starts_closed_before_any_camera_frame(self):
     # the parser reads all-zero before the first frame, which would otherwise look settled
@@ -311,9 +323,7 @@ class TestSpeedSignLimit:
   1-bit SPEED_SIGN_ON at bit 12 is its low bit): 1 = limit displayed in mph, 2 = displayed in
   km/h, 0 = none. Which value an FSC emits tracks its market, not the cluster's unit setting.
   Payloads are real captures: mph frames from a US CX-5 2022 (drive_1x local set), km/h
-  frames from a NZ CX-5 (route
-  ded445e51c0e1830|00000007--4b5a89a1ce) where the old 1-bit decode at bit 12 read 0 and SLA
-  never saw a limit."""
+  frames from a NZ CX-5, where the old 1-bit decode at bit 12 read 0 and SLA never saw a limit."""
 
   @pytest.mark.parametrize("payload, expected_ms", [
     ("0000000002005300", 0.0),                 # no limit displayed

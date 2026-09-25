@@ -59,6 +59,9 @@ class CarState(CarStateBase, CarStateExt):
     # LANE_LINES 0. Seen off on a CX-5 2022 for a whole drive after the controller pressed the
     # camera's button (7c735af5fce56485/00000105, 2026-09-12); never off on any other drive.
     self.lkas_setting_on = True
+    # The camera's HBC arm state, 0x440 BIT2. The stock radar relays it to CRZ_CTRL bit 13 for
+    # the dash's green HBC light; under the radar takeover the controller relays it instead.
+    self.hbc_armed = False
 
     self.distance_button = 0
     self.accel_button = 0
@@ -293,7 +296,7 @@ class CarState(CarStateBase, CarStateExt):
       ret.cruiseState.enabled = self.cruise_enabled and not self.cruise_enabled_blocked
 
       # The FSC teardown gate requires fresh, settled CAM_LANEINFO without ERR_BIT. BIT2 is
-      # excluded because it may remain set for an entire ignition cycle.
+      # excluded: it is the auto high-beam arming bit and stays set for as long as HBC is armed.
       laneinfo = cp_cam.vl["CAM_LANEINFO"]
       settled = cam_laneinfo_fresh and not (laneinfo["NO_ERR_BIT"] or laneinfo["ERR_BIT"])
       self.fsc_settled_frames = self.fsc_settled_frames + 1 if settled else 0
@@ -340,6 +343,7 @@ class CarState(CarStateBase, CarStateExt):
     self.cam_laneinfo = cp_cam.vl["CAM_LANEINFO"]
     ret.steerFaultPermanent = cp_cam.vl["CAM_LKAS"]["ERR_BIT_1"] == 1
     self.stock_tja = int(self.cam_laneinfo["TJA"]) if cam_laneinfo_fresh else 0
+    self.hbc_armed = cam_laneinfo_fresh and self.cam_laneinfo["BIT2"] == 1
 
     # Decode distance, set-speed, resume, cancel, and main-button events.
     prev_distance_button = self.distance_button

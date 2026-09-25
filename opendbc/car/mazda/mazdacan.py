@@ -18,6 +18,13 @@ LEAD_TRACK_TEMPLATE = bytes.fromhex("000e00001c000000")
 DIST_OBJ_SCALE = 0.0625   # m per bit, DIST_OBJ and RELV_OBJ share it
 DIST_OBJ_MAX = 255.875    # m, the full-scale DIST_OBJ reading a track can carry
 
+# The camera gates auto high beams on a living 5/6 object world: empty-only templates read as
+# a dead radar and HBC stops deciding under the takeover. One occupied 0x365 track, encoded on
+# the 0x364 field layout, sits at 175 m nominal (2x-uncalibrated scale, 87-350 m band), far
+# enough out to never suppress beams. Camera bus only; the body bus keeps the empty template.
+SYNTHETIC_TRACK_ADDR = 0x365
+SYNTHETIC_TRACK = bytes.fromhex("af00a4001bff37c1")
+
 # The G46L radar (2016.5 bodies) sends only this static frame and no track messages at
 # all, so the lead rides CRZ_CTRL alone; fully static — no counter, no checksum.
 G46L_RADAR_STATIC_MSG = (0x499, bytes.fromhex("0098400000000000"))
@@ -54,8 +61,11 @@ def create_acc_command(packer, bus, counter, accel, *, long_active, acc_availabl
   return packer.make_can_msg("CRZ_INFO", bus, values)
 
 
-def create_crz_ctrl(packer, bus, long_active, acc_available, gap_setting, radar_has_lead, stop_go_phase, acc_active_2):
+def create_crz_ctrl(packer, bus, long_active, acc_available, gap_setting, radar_has_lead, stop_go_phase, acc_active_2,
+                    *, hbc_armed=False):
   # CRZ_CTRL replaces radar cruise state and mirrors stop phase and driver gap selection.
+  # NEW_SIGNAL_3 (bit 13) mirrors the camera's HBC-arming bit (0x440 BIT2), matching stock;
+  # the dash's green HBC light follows it.
   values = {
     "MSG_1_INV": 1,
     "MSG_1_INV_COPY": 1,
@@ -66,6 +76,7 @@ def create_crz_ctrl(packer, bus, long_active, acc_available, gap_setting, radar_
     "RADAR_HAS_LEAD": int(radar_has_lead),
     "RADAR_LEAD_RELATIVE_DISTANCE": stop_go_phase,
     "ACC_ACTIVE_2": int(acc_active_2),
+    "NEW_SIGNAL_3": int(hbc_armed),
   }
   return packer.make_can_msg("CRZ_CTRL", bus, values)
 
@@ -94,6 +105,8 @@ def create_radar_frames(bus, counter, lead, g46l=False):
   for addr, dat in RADAR_TRACK_MSGS.items():
     if lead is not None and addr == LEAD_TRACK_ADDR:
       dat = create_lead_track(*lead)
+    elif bus == 2 and addr == SYNTHETIC_TRACK_ADDR:
+      dat = SYNTHETIC_TRACK
     frames.append(CanData(addr, dat[:7] + bytes([(dat[7] & 0xf0) | (counter % 16)]), bus))
   return frames
 
