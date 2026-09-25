@@ -329,7 +329,12 @@ class CarState(CarStateBase, CarStateExt):
     # PEDALS.STANDSTILL means wheels stopped, not ACC hold. Reporting it under openpilot
     # longitudinal would prevent LongControl from leaving its stopping state.
     ret.cruiseState.standstill = cp.vl["PEDALS"]["STANDSTILL"] == 1 and not self.CP.openpilotLongitudinalControl
+    # CRZ_SPEED is the held speed on every cluster we have measured (NA imperial, metric CX-9,
+    # metric export CX-5). An Oceania cluster displays it over-read, so the dash number, which
+    # the buttons step and ICBM reads, is published separately.
     ret.cruiseState.speed = cp.vl["CRZ_EVENTS"]["CRZ_SPEED"] * CV.KPH_TO_MS
+    if self.CP_SP.flags & MazdaFlagsSP.OCEANIA_CLUSTER and ret.cruiseState.speed > 0:
+      ret.cruiseState.speedCluster = (cp.vl["CRZ_EVENTS"]["CRZ_SPEED"] / 0.98 + 1.) * CV.KPH_TO_MS
 
     # Stock LKAS must be switched on: the EPS applies no LKAS torque otherwise. LANE_LINES 0 is
     # upstream's reading of the camera; the CAM_SETTINGS intervention bits are the setting itself,
