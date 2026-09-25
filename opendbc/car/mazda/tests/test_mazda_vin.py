@@ -38,6 +38,10 @@ REAL_VINS = [
   ('JM3KFBXY2P0142737', CAR.MAZDA_CX5_2022),   # 2023 2.5 Turbo Signature
   ('JM3KFBCL4R0506329', CAR.MAZDA_CX5_2022),   # 2024 Preferred
   ('JM3KFBAY8S0594547', CAR.MAZDA_CX5_2022),   # 2025 Carbon Turbo
+  # JM7 export crossovers carry the same chassis and year fields as JM3
+  (make_vin('JM7', 'KF', 'S'), CAR.MAZDA_CX5_2022),  # 2025 CX-5 AWD, Latin America (zoompilot/opendbc#18)
+  (make_vin('JM7', 'KF', 'L'), CAR.MAZDA_CX5),
+  (make_vin('JM7', 'TC', 'P'), CAR.MAZDA_CX9_2021),
   # TC 2016-20 -> MAZDA_CX9, 2021-23 -> MAZDA_CX9_2021
   ('JM3TCBDY1G0107351', CAR.MAZDA_CX9),        # 2016 Grand Touring
   ('JM3TCBDY2K0314968', CAR.MAZDA_CX9),        # 2019 Grand Touring
