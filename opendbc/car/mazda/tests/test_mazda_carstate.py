@@ -756,4 +756,3 @@ def test_cam_settings_absence_never_reads_as_off():
   CI = car_interface(alpha_long=False)
   for i in range(10):
     assert not feed(CI, i)[0].invalidLkasSetting
-
