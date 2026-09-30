@@ -16,7 +16,8 @@ from opendbc.car.mazda.carcontroller import CarController
 from opendbc.car.mazda.fingerprints import FW_VERSIONS
 from opendbc.car.mazda.interface import CarInterface
 from opendbc.car.mazda.tests.conftest import CAM_LKAS, CAM_LANEINFO, DBC_NAME, car_interface, car_params, car_params_sp
-from opendbc.car.mazda.values import CAR, DBC, G46L_RADAR_FW, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, STEER_TO_ZERO_PLATFORMS, MazdaFlags, MazdaSafetyFlags
+from opendbc.car.mazda.values import CAR, DBC, G46L_RADAR_FW, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, STEER_TO_ZERO_PLATFORMS, \
+  TRACKLESS_DIALECT_PLATFORMS, MazdaFlags, MazdaSafetyFlags
 
 Ecu = structs.CarParams.Ecu
 
@@ -57,18 +58,17 @@ G46L_FW = _g46l_stem + b'\x00' * (24 - len(_g46l_stem))
 class TestMazdaEpsSwap:
   """A 2022+ CX-5 EPS swapped into an older Mazda brings the EPS-derived behavior with it.
 
-  Pre-2022 Mazdas are dashcam only because their EPS locks steering out after ~5 s hands-off
-  and below 45 kph. That lockout lives in the EPS, so the swap lifts it. Everything keyed on
-  the radar, camera or vehicle dynamics must stay keyed on the model.
+  The swap lifts what lives in the EPS (floor, tune profile, alpha-long offer); the model
+  keeps everything else.
   """
 
-  def test_stock_older_mazda_is_dashcam_only(self):
+  def test_stock_older_mazda_drives_above_its_floor(self):
     CP = car_params(CAR.MAZDA_CX5, car_fw=eps_fw(STOCK_CX5_EPS_FW))
-    assert CP.dashcamOnly
+    assert not CP.dashcamOnly
     assert CP.minSteerSpeed == pytest.approx(MIN_STEER_SPEED_STOCK_EPS, abs=5e-8)
     assert CP.steerActuatorDelay == pytest.approx(0.14, abs=5e-8)
 
-  def test_swapped_eps_lifts_dashcam_and_the_speed_floor(self):
+  def test_swapped_eps_lifts_the_speed_floor(self):
     CP = car_params(CAR.MAZDA_CX5, car_fw=eps_fw(SWAPPED_EPS_FW))
     assert not CP.dashcamOnly
     assert CP.minSteerSpeed == 0
@@ -106,14 +106,11 @@ class TestMazdaEpsSwap:
   @pytest.mark.parametrize("candidate", list(CAR))
   @pytest.mark.parametrize("swapped", [False, True], ids=["stock", "swapped_eps"])
   def test_alpha_long_follows_the_eps(self, candidate, swapped):
-    # alpha long is offered wherever the steer-to-zero EPS is: the platforms that ship it and any
-    # Mazda with that EPS swapped in. A stock older EPS cuts lateral below 45 kph, so
-    # stop-and-go would run unsteered; those cars are not offered it. Neither is a platform
-    # whose DBC has no radar bus (the pre-2021 CX-9), since the port has never seen its radar
+    # the steer-to-zero gate keeps stop-and-go off an EPS that floors lateral below 45 kph
     car_fw = eps_fw(SWAPPED_EPS_FW) if swapped else None
     CP = car_params(candidate, car_fw=car_fw, alpha_long=True)
-    has_radar_dbc = Bus.radar in DBC[candidate]
-    expected = (candidate in STEER_TO_ZERO_PLATFORMS or swapped) and has_radar_dbc
+    has_dialect = Bus.radar in DBC[candidate] or candidate in TRACKLESS_DIALECT_PLATFORMS
+    expected = (candidate in STEER_TO_ZERO_PLATFORMS or swapped) and has_dialect
     assert CP.alphaLongitudinalAvailable == expected
     assert CP.openpilotLongitudinalControl == expected
     assert bool(CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.LONG.value) == expected
@@ -124,10 +121,10 @@ class TestMazdaEpsSwap:
   def test_ke_runs_vision_only_under_a_swapped_eps(self):
     # the first-generation radar speaks no track dialect, so the platform promises no
     # radar bus: the lead comes from the model and no teardown is offered, while the
-    # EPS swap still lifts the steering lockouts
+    # EPS swap still lifts the speed floor
     stock = car_params(CAR.MAZDA_CX5_KE)
     assert stock.radarUnavailable
-    assert stock.dashcamOnly
+    assert not stock.dashcamOnly
 
     swapped = car_params(CAR.MAZDA_CX5_KE, car_fw=eps_fw(SWAPPED_EPS_FW))
     assert swapped.radarUnavailable
@@ -159,13 +156,16 @@ class TestMazdaEpsSwap:
 
   @pytest.mark.parametrize("candidate", [CAR.MAZDA_CX5_KE, CAR.MAZDA_CX5, CAR.MAZDA_CX9, CAR.MAZDA_3, CAR.MAZDA_6])
   def test_docs_are_generated_without_firmware(self, candidate):
-    # car_fw is empty in docs mode, and the car picker consumes docs mode: a firmware-gated
-    # platform must stay selectable there. dashcamOnly is a measured-hardware call, so the
-    # on-device EPS check keeps the gate; docs describe the stock car from the platform table.
+    # docs feed the car picker, which drops dashcamOnly platforms; every platform stays selectable
     from opendbc.car import gen_empty_fingerprint
     from opendbc.car.mazda.interface import CarInterface
     CP = CarInterface.get_params(candidate, gen_empty_fingerprint(), [], alpha_long=False, is_release=False, docs=True)
     assert not CP.dashcamOnly
+
+
+def test_every_gen1_platform_is_admitted():
+  for candidate in CAR:
+    assert not car_params(candidate).dashcamOnly, candidate
 
 
 class TestMazdaLegacyFwEps:
@@ -209,9 +209,9 @@ class TestMazdaLegacyFwEps:
     assert CP.minSteerSpeed == pytest.approx(MIN_STEER_SPEED_STOCK_EPS, abs=5e-8)
     assert not CP.dashcamOnly
 
-  def test_legacy_firmware_in_an_older_body_stays_dashcam(self):
+  def test_legacy_firmware_in_an_older_body_keeps_the_floor(self):
     CP = car_params(CAR.MAZDA_CX5, car_fw=eps_fw(LEGACY_FW_EPS))
-    assert CP.dashcamOnly
+    assert not CP.dashcamOnly
     assert CP.flags & MazdaFlags.LEGACY_FW_EPS
 
   @pytest.mark.parametrize("candidate, car_fw", [
@@ -231,8 +231,8 @@ class TestMazdaLegacyFwEps:
     assert CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.LEGACY_FW_EPS.value
     assert CP.minSteerSpeed == pytest.approx(MIN_STEER_SPEED_STOCK_EPS, abs=5e-8)
     assert CP.steerActuatorDelay == pytest.approx(0.14, abs=5e-8)
-    # support itself is still the platform's call: only the CX-9 2021 drives among these
-    assert CP.dashcamOnly == (candidate != CAR.MAZDA_CX9_2021)
+    # every platform is admitted; the legacy EPS keeps its floor
+    assert not CP.dashcamOnly
 
   def test_no_mazda_is_left_on_the_upstream_envelope(self):
     for candidate in CAR:
@@ -267,7 +267,7 @@ class TestForeignRadar:
 
   def test_g46l_unlocks_alpha_long_on_a_platform_without_a_radar_bus(self):
     # the same car on its own platform: no radar bus claimed, but the G46L is reachable
-    # and its dialect can be replayed, so the port is offered with the swapped EPS
+    # and its dialect can be replayed, so alpha long is offered behind the swapped EPS
     fw = eps_fw(SWAPPED_EPS_FW) + [radar_fw(G46L_FW)]
     CP = car_params(CAR.MAZDA_CX5_KE, car_fw=fw, alpha_long=True)
     assert CP.radarUnavailable
@@ -279,6 +279,16 @@ class TestForeignRadar:
     # a stock EPS keeps the offer off even with the G46L present
     stock = car_params(CAR.MAZDA_CX5_KE, car_fw=[radar_fw(G46L_FW)], alpha_long=True)
     assert not stock.alphaLongitudinalAvailable
+
+  def test_trackless_cx9_unlocks_alpha_long_behind_a_swap(self):
+    assert not car_params(CAR.MAZDA_CX9, alpha_long=True).alphaLongitudinalAvailable
+
+    CP = car_params(CAR.MAZDA_CX9, car_fw=eps_fw(SWAPPED_EPS_FW), alpha_long=True)
+    assert CP.radarUnavailable
+    assert not CP.dashcamOnly
+    assert CP.alphaLongitudinalAvailable
+    assert CP.openpilotLongitudinalControl
+    assert bool(CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.LONG.value)
 
   def test_an_unknown_radar_keeps_the_stock_parse_path(self):
     # an unlisted newer revision of a working radar must not silently lose its tracks:

@@ -6,8 +6,8 @@ from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.mazda.carcontroller import CarController
 from opendbc.car.mazda.carstate import CarState
 from opendbc.car.mazda.radar_interface import RadarInterface
-from opendbc.car.mazda.values import DBC, G46L_RADAR_FW, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, STEER_TO_ZERO_PLATFORMS, SUPPORTED_PLATFORMS, MazdaFlags, \
-  MazdaSafetyFlags, WMI, platform_from_vin
+from opendbc.car.mazda.values import DBC, G46L_RADAR_FW, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, STEER_TO_ZERO_PLATFORMS, SUPPORTED_PLATFORMS, \
+  TRACKLESS_DIALECT_PLATFORMS, MazdaFlags, MazdaSafetyFlags, WMI, platform_from_vin
 from opendbc.car.vin import Vin, is_valid_vin
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 
@@ -47,12 +47,11 @@ class CarInterface(CarInterfaceBase):
       ret.flags |= MazdaFlags.LEGACY_FW_EPS.value
       ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.LEGACY_FW_EPS.value
 
-    # Alpha-long silences the radar and stands in for it, so it needs the radar's dialect,
-    # not its tracks: offer it wherever the platform's radar speaks the 2022 family dialect
-    # (its DBC claims a radar bus) or the detected radar is the G46L whose own replay exists.
-    # The EPS gate stays: a stock older EPS cuts lateral below 45 kph, so stop-and-go would
-    # run unsteered.
-    ret.alphaLongitudinalAvailable = steer_to_zero and (Bus.radar in DBC[candidate] or g46l_radar)
+    # Alpha-long silences the radar and stands in for it, so it needs the radar's dialect, not
+    # its tracks (bus claim, G46L fw, or the trackless registry). The EPS gate stays: a stock
+    # older EPS cuts lateral below 45 kph, so stop-and-go would run unsteered.
+    ret.alphaLongitudinalAvailable = steer_to_zero and (Bus.radar in DBC[candidate] or g46l_radar
+                                                        or candidate in TRACKLESS_DIALECT_PLATFORMS)
     ret.openpilotLongitudinalControl = alpha_long and ret.alphaLongitudinalAvailable
     if ret.openpilotLongitudinalControl:
       ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.LONG.value
@@ -62,10 +61,8 @@ class CarInterface(CarInterfaceBase):
       ret.stopAccel = -1.024  # stock MRCC standstill command
       ret.longitudinalActuatorDelay = 0.36  # measured ~0.3 s dead time + ~0.3 s first-order lag
 
-    # Older EPS firmware enforces hands-off and low-speed steering lockouts.
-    # Docs mode carries no real EPS firmware, so leave dashcamOnly at the default.
     if not docs:
-      ret.dashcamOnly = candidate not in SUPPORTED_PLATFORMS and not steer_to_zero
+      ret.dashcamOnly = candidate not in SUPPORTED_PLATFORMS
 
     carlog.debug({"event": "mazdaRadarVerdict", "radarUnavailable": ret.radarUnavailable,
                   "platformClaim": Bus.radar in DBC[candidate], "g46lRadar": g46l_radar, "steerToZeroEps": steer_to_zero})

@@ -261,8 +261,11 @@ STEER_TO_ZERO_EPS_FW = {
 
 # Platforms that ship the steer-to-zero EPS from the factory: what an unread EPS falls back to.
 STEER_TO_ZERO_PLATFORMS = frozenset({CAR.MAZDA_CX5_2022, CAR.MAZDA_CX8_2023})
-# Bodies supported on their stock EPS; any other Mazda needs a steer-to-zero EPS swapped in.
-SUPPORTED_PLATFORMS = STEER_TO_ZERO_PLATFORMS | {CAR.MAZDA_CX9_2021}
+SUPPORTED_PLATFORMS = frozenset(CAR)
+
+# The pre-2021 CX-9's radar isn't known to publish 0x361-0x366, so its platform claims no radar bus;
+# its dialect is assumed 2022-family (shared K123/K131 fw, no capture) and replays standard.
+TRACKLESS_DIALECT_PLATFORMS = frozenset({CAR.MAZDA_CX9})
 
 # The 2016.5-era radar kept by an EPS-swapped older body. Listed for fingerprinting, but
 # it never publishes 0x361-0x366 on bus 0; its one frame is fully static — no counter, no
