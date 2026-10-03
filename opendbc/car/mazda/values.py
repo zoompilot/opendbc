@@ -58,6 +58,12 @@ class CarControllerParams:
 
   # Debounce movement requests before releasing a standstill hold.
   RELEASE_DEBOUNCE_T = 0.2
+  # A plan that means to move asks for more than this at a standstill. The e2e model drifts
+  # +0.02..+0.19 m/s^2 for up to 1.1 s at a stop before its own shouldStop lands (9 blips, routes
+  # 00000100/12c/21b/25e/27b), and each release it won cost the body's hold (EPB.HOLD_STATE 5)
+  # and let the car creep. Every drive-off passes 0.25 within 1.1 s (22 launches); stock breaks
+  # away at +0.21 to +0.41. Once open, any positive plan keeps the hold open.
+  RELEASE_ACCEL = 0.25  # m/s^2
 
   # Debounce lead visibility before advertising a radar track.
   LEAD_DEBOUNCE_T = 0.5
