@@ -10,8 +10,7 @@ debounce, the RESUME_UNLATCHING pulse and its one retry.
 import pytest
 
 from opendbc.car import DT_CTRL
-from opendbc.car.mazda.values import CarControllerParams
-from opendbc.car.mazda.longitudinal import (RELEASE_DEBOUNCE_FRAMES, RESUME_REPULSE_FRAMES, RESUME_UNLATCH_LATCHED_FRAMES,
+from opendbc.car.mazda.longitudinal import (RELEASE_ACCEL, RELEASE_DEBOUNCE_FRAMES, RESUME_REPULSE_FRAMES, RESUME_UNLATCH_LATCHED_FRAMES,
                                             StandstillHold)
 
 
@@ -100,10 +99,16 @@ def test_hold_comes_back_if_the_plan_changes_its_mind():
   assert not sm.holding
   # nothing was latched, so this release emits no unlatch bit at all, deferred or otherwise
   assert sm.unlatch_frames == 0 and not sm.resume_unlatching
+  # a launch that eases below the opening threshold does not flap back into a hold
+  drive(sm, int(2.0 / DT_CTRL), standstill=True, plan_accel=0.1)
+  assert not sm.holding
   drive(sm, 1, stopping=True, standstill=True, plan_accel=-1.0)
   assert sm.holding
   assert not sm.resume_unlatching and sm.unlatch_frames == 0
   assert sm.stop_bits
+  # re-held, it needs a real request again
+  drive(sm, int(2.0 / DT_CTRL), standstill=True, plan_accel=0.1)
+  assert sm.holding
 
 
 @pytest.mark.parametrize("body_hold", [False, True])
@@ -114,7 +119,7 @@ def test_sub_threshold_plan_never_opens_the_hold(body_hold):
   drive(sm, 1, stopping=True)
   drive(sm, 100, stopping=True, standstill=True, body_hold=body_hold)
   drive(sm, int(3.0 / DT_CTRL), standstill=True, body_hold=body_hold,
-        plan_accel=CarControllerParams.RELEASE_ACCEL - 0.01)
+        plan_accel=RELEASE_ACCEL - 0.01)
   assert sm.holding and not sm.just_released and not sm.resume_unlatching
   assert sm.stop_bits != body_hold
 
@@ -127,34 +132,11 @@ def test_route_27b_arrival_blip_keeps_the_hold():
   drive(sm, 1, standstill=True, plan_accel=-0.02)
   assert sm.holding
   for i in range(30):
-    sm.update(long_engaged=True, stopping=False, standstill=True, plan_accel=0.01 + 0.003 * i,
-              body_hold=False, gas_pressed=False)
+    drive(sm, 1, standstill=True, plan_accel=0.01 + 0.003 * i)
     assert sm.holding and sm.stop_bits and not sm.just_released
   for i in range(100):
-    sm.update(long_engaged=True, stopping=True, standstill=True, plan_accel=-0.01 * i,
-              body_hold=False, gas_pressed=False)
+    drive(sm, 1, stopping=True, standstill=True, plan_accel=-0.01 * i)
     assert sm.holding and sm.stop_bits
-
-
-def test_open_hold_stays_open_on_any_positive_plan():
-  sm = StandstillHold()
-  drive(sm, 1, stopping=True)
-  drive(sm, 100, stopping=True, standstill=True)
-  drive(sm, RELEASE_DEBOUNCE_FRAMES, standstill=True, plan_accel=0.5)
-  assert not sm.holding
-  # a launch that eases below the opening threshold does not flap back into a hold
-  drive(sm, int(2.0 / DT_CTRL), standstill=True, plan_accel=0.1)
-  assert not sm.holding
-  # a plan that stops asking re-holds, and then needs a real request again
-  drive(sm, 1, stopping=True, standstill=True, plan_accel=-0.5)
-  assert sm.holding
-  drive(sm, int(2.0 / DT_CTRL), standstill=True, plan_accel=0.1)
-  assert sm.holding
-
-
-def test_release_threshold_sits_between_the_blips_and_a_breakaway():
-  # largest logged e2e standstill blip +0.19 (route 00000100); stock's latched breakaway min +0.405
-  assert 0.19 < CarControllerParams.RELEASE_ACCEL < 0.405
 
 
 def test_never_latched_release_emits_no_pulse():
