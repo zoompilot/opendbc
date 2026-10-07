@@ -283,6 +283,10 @@ class CarState(CarStateBase, CarStateExt):
     ret.stockFcw = (self.cam_empty_seen and cam_empty["STATUS"] != 0x7F) or \
                    ped["PED_WARNING"] == 1 or ped["BRAKE_WARNING"] == 1
 
+    # The MRCC main button sets MODE_X, MODE_Y or both: MODE_Y alone is a main-on on both the
+    # KE and the 2022 CX-5 (59 of 59 logged), MODE_X alone the KE's main-off (route_ke_0b).
+    btns = cp.vl["CRZ_BTNS"]
+    main_press = btns["MODE_X"] == 1 or btns["MODE_Y"] == 1
     acc_armed = cp.vl["PEDALS"]["ACC_OFF"] == 1
     acc_active = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
     # Both longitudinal modes: the TJA-press cleanup and the white-wheel HUD gate read it.
@@ -292,8 +296,9 @@ class CarState(CarStateBase, CarStateExt):
       # After radar teardown, derive cruise state from PEDALS. Hold the previous state through
       # brake-only samples where both cruise bits are transiently low.
       brake_free = not ret.brakePressed and not self.brake_pressed_prev
-      # Retain wheel-cancel context until PEDALS reflects the main-state change.
-      if cp.vl["CRZ_BTNS"]["CAN_OFF"] == 1:
+      # Retain wheel-cancel context until PEDALS reflects the main-state change. A main press
+      # while armed is a main-off too: the KE has no CAN_OFF step.
+      if btns["CAN_OFF"] == 1 or (self.cruise_available and main_press):
         self.cancel_context_frames = CANCEL_CONTEXT_FRAMES
       elif self.cancel_context_frames > 0:
         self.cancel_context_frames -= 1
@@ -432,7 +437,7 @@ class CarState(CarStateBase, CarStateExt):
     # Publish CAN_OFF so ICBM does not transmit over a physical cancel press.
     self.cancel_button = cp.vl["CRZ_BTNS"]["CAN_OFF"]
     self.resume_button = cp.vl["CRZ_BTNS"]["RES"]
-    self.main_button = int(cp.vl["CRZ_BTNS"]["MODE_X"] == 1 and cp.vl["CRZ_BTNS"]["MODE_Y"] == 1)
+    self.main_button = int(main_press)
     # BIT1 is active-low: a 0 on the bus-0 parser is the wheel's MRCC master press. Gated on
     # the declaration (an undeclared wheel's idle level is unknown) and held unpressed until
     # the wheel's first frame: parser zeros before it would decode as a phantom press.

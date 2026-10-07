@@ -11,6 +11,9 @@
 // Physical TJA button, DBC start bit 11 (byte 1, bit 3). Observed on a CTS-equipped gen1
 // Mazda; trims without the button hold it low for the life of a drive.
 #define MAZDA_TJA_BUTTON_BIT 11U
+// MRCC main button, DBC MODE_Y / MODE_X: a press sets either or both (the KE's main-off is MODE_X alone).
+#define MAZDA_MODE_Y_BIT 13U
+#define MAZDA_MODE_X_BIT 14U
 // sunnypilot safety param: the TJA button is the MADS lateral switch
 #define MAZDA_PARAM_SP_TJA_BUTTON 1U
 #define MAZDA_RADAR_STATIC  0x499U
@@ -152,10 +155,14 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
     }
 
     if ((msg->addr == MAZDA_CRZ_BTNS) && mazda_longitudinal) {
-      // A physical cancel press always exits controls, and explains the main-off that follows.
+      // A physical cancel press always exits controls. It, or a main press while armed (the
+      // KE's main-off, no CAN_OFF), explains the main-off that follows.
       bool cancel = GET_BIT(msg, 0U);
+      bool main_press = GET_BIT(msg, MAZDA_MODE_Y_BIT) || GET_BIT(msg, MAZDA_MODE_X_BIT);
       if (cancel) {
         controls_allowed = false;
+      }
+      if (cancel || (acc_main_on && main_press)) {
         mazda_cancel_context_frames = MAZDA_CANCEL_CONTEXT_FRAMES;
       }
       // Record SET/RES intent for the engagement qualifier below.

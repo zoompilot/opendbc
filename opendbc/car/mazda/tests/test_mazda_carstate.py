@@ -385,12 +385,12 @@ class TestCancelUnderBraking:
     return pk, n
 
   @staticmethod
-  def feed_pedals(CI, pk, n0, secs, brake, cancel):
+  def feed_pedals(CI, pk, n0, secs, brake, cancel, armed=False, buttons=None):
     ret = None
     n = int(secs / DT_CTRL)
     for i in range(n0, n0 + n):
-      ret, _ = feed(CI, i, pk.make_can_msg("ENGINE_DATA", 0, {"SPEED": 0}), pk.make_can_msg("PEDALS", 0, {"ACC_OFF": 0, "BRAKE_ON": int(brake)}),
-                    pk.make_can_msg("CRZ_BTNS", 0, {"CAN_OFF": int(cancel)}))
+      ret, _ = feed(CI, i, pk.make_can_msg("ENGINE_DATA", 0, {"SPEED": 0}), pk.make_can_msg("PEDALS", 0, {"ACC_OFF": int(armed), "BRAKE_ON": int(brake)}),
+                    pk.make_can_msg("CRZ_BTNS", 0, {"CAN_OFF": int(cancel), **(buttons or {})}))
     return ret, n0 + n
 
   def test_brake_only_dropout_is_held(self):
@@ -403,6 +403,16 @@ class TestCancelUnderBraking:
     CI = car_interface()
     pk, n = self.armed_and_silent(CI)
     ret, n = self.feed_pedals(CI, pk, n, 0.3, brake=True, cancel=True)
+    assert not ret.cruiseState.available
+
+  @pytest.mark.parametrize("buttons", [{"MODE_X": 1}, {"MODE_X": 1, "MODE_Y": 1}], ids=["ke", "cx5_2022"])
+  def test_main_button_off_lands_through_the_brake(self, buttons):
+    # route_ke_0b t+200: the KE's MRCC button turns main off with MODE_X alone, no CAN_OFF.
+    # Held as a brake-only dropout, MADS stayed on at a stop until the brake came up.
+    CI = car_interface()
+    pk, n = self.armed_and_silent(CI)
+    _, n = self.feed_pedals(CI, pk, n, DT_CTRL, brake=True, cancel=False, armed=True, buttons=buttons)
+    ret, n = self.feed_pedals(CI, pk, n, 0.2, brake=True, cancel=False)
     assert not ret.cruiseState.available
 
   def test_cancel_context_outlives_the_press(self):
@@ -707,10 +717,13 @@ class TestTjaButtonEvents:
     ret = self._btns(CI, pk, 1, TJA_BUTTON=1)
     assert not [be for be in ret.buttonEvents if be.type == self.ButtonType.lkas]
 
-  def test_main_cruise_event_is_unchanged(self):
+  @pytest.mark.parametrize("mode_x, mode_y", [(1, 1), (0, 1), (1, 0)], ids=["both", "mode_y", "ke_mode_x"])
+  def test_main_cruise_event(self, mode_x, mode_y):
+    # either bit alone is a whole main press: MODE_Y alone is a main-on on both the KE and the
+    # 2022 CX-5, MODE_X alone the KE's main-off
     CI, pk = car_interface(alpha_long=False), packer()
     self._btns(CI, pk, 0, MODE_X=0, MODE_Y=0)
-    ret = self._btns(CI, pk, 1, MODE_X=1, MODE_Y=1)
+    ret = self._btns(CI, pk, 1, MODE_X=mode_x, MODE_Y=mode_y)
     assert [be.type for be in ret.buttonEvents] == [self.ButtonType.mainCruise]
 
 

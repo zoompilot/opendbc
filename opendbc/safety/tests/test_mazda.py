@@ -138,9 +138,13 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
     values = {"CRZ_ACTIVE": enable}
     return self.packer.make_can_msg_safety("CRZ_CTRL", 0, values)
 
-  def _button_msg(self, resume=False, cancel=False, set_m=False, set_p=False, tja=False, bus=0):
+  def _button_msg(self, resume=False, cancel=False, set_m=False, set_p=False, tja=False, main_x=False, main_y=False, bus=0):
     values = {
       "TJA_BUTTON": tja,
+      "MODE_X": main_x,
+      "MODE_X_INV": (main_x + 1) % 2,
+      "MODE_Y": main_y,
+      "MODE_Y_INV": (main_y + 1) % 2,
       "CAN_OFF": cancel,
       "CAN_OFF_INV": (cancel + 1) % 2,
       "RES": resume,
@@ -638,6 +642,30 @@ class TestMazdaLongitudinalSafety(TestMazdaSteerToZeroEpsSafety, common.Longitud
     self._rx(self._pedals_msg(armed=True, brake=True))
     self.assertTrue(self.safety.get_acc_main_on())
     self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+  def test_main_button_off_lands_through_the_brake(self):
+    # route_ke_0b t+200: the KE turns MRCC off from the main button (MODE_X alone), no CAN_OFF.
+    # At a stop with the brake held the main-off was held as a dropout until the brake came up.
+    for main_y in (False, True):  # KE: MODE_X alone; 2022 CX-5: both
+      with self.subTest(main_y=main_y):
+        self.setUp()
+        self._armed()
+        for _ in range(10):
+          self._rx(self._pedals_msg(armed=True, brake=True))
+        self._rx(self._button_msg(main_x=True, main_y=main_y))
+        self._rx(self._button_msg())
+        self._rx(self._pedals_msg(armed=False, brake=True))
+        self.assertFalse(self.safety.get_acc_main_on())
+        self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_main_button_on_does_not_open_context(self):
+    # a press with main off is a main-on: a brake-only dropout right after it is still held
+    self.safety.set_mads_params(True, False, False)
+    self._rx(self._button_msg(main_x=True))
+    self._rx(self._button_msg())
+    self._rx(self._pedals_msg(armed=True, brake=True))
+    self._rx(self._pedals_msg(armed=False, brake=True))
+    self.assertTrue(self.safety.get_acc_main_on())
 
   def test_cancel_context_outlives_the_press(self):
     # PEDALS trails the button: the bits can drop after the button is back up
