@@ -11,7 +11,7 @@
 // Physical TJA button, DBC start bit 11 (byte 1, bit 3). Observed on a CTS-equipped gen1
 // Mazda; trims without the button hold it low for the life of a drive.
 #define MAZDA_TJA_BUTTON_BIT 11U
-// MRCC main button, DBC MODE_Y / MODE_X: a press sets either or both (the KE's main-off is MODE_X alone).
+// MRCC main button, DBC MODE_Y / MODE_X: a press sets either or both.
 #define MAZDA_MODE_Y_BIT 13U
 #define MAZDA_MODE_X_BIT 14U
 // sunnypilot safety param: the TJA button is the MADS lateral switch
@@ -54,6 +54,7 @@ static bool mazda_legacy_fw_eps = false;
 static bool mazda_acc_armed = false;
 static uint32_t mazda_engage_btn_frames = 0U;
 static uint32_t mazda_cancel_context_frames = 0U;
+static bool mazda_main_press_prev = false;
 
 static bool mazda_mrcc_off_msg_valid(const CANPacket_t *msg) {
   // Exact active-low MRCC master tap. CTR occupies the variable bits in byte 3;
@@ -155,16 +156,17 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
     }
 
     if ((msg->addr == MAZDA_CRZ_BTNS) && mazda_longitudinal) {
-      // A physical cancel press always exits controls. It, or a main press while armed (the
-      // KE's main-off, no CAN_OFF), explains the main-off that follows.
+      // A physical cancel press always exits controls. It, or a main press begun while armed
+      // (the KE's main-off, no CAN_OFF), explains the main-off that follows.
       bool cancel = GET_BIT(msg, 0U);
       bool main_press = GET_BIT(msg, MAZDA_MODE_Y_BIT) || GET_BIT(msg, MAZDA_MODE_X_BIT);
       if (cancel) {
         controls_allowed = false;
       }
-      if (cancel || (acc_main_on && main_press)) {
+      if (cancel || (acc_main_on && main_press && !mazda_main_press_prev)) {
         mazda_cancel_context_frames = MAZDA_CANCEL_CONTEXT_FRAMES;
       }
+      mazda_main_press_prev = main_press;
       // Record SET/RES intent for the engagement qualifier below.
       if (GET_BIT(msg, 2U) || GET_BIT(msg, 4U) || GET_BIT(msg, 5U)) {
         mazda_engage_btn_frames = MAZDA_ENGAGE_BTN_WINDOW;
@@ -384,6 +386,7 @@ static bool mazda_fwd_hook(int bus_num, int addr) {
 static safety_config mazda_init(uint16_t param) {
   mazda_engage_btn_frames = 0U;
   mazda_cancel_context_frames = 0U;
+  mazda_main_press_prev = false;
   mazda_acc_armed = false;
 
   static const CanMsg MAZDA_TX_MSGS[] = {

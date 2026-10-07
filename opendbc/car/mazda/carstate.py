@@ -297,8 +297,9 @@ class CarState(CarStateBase, CarStateExt):
       # brake-only samples where both cruise bits are transiently low.
       brake_free = not ret.brakePressed and not self.brake_pressed_prev
       # Retain wheel-cancel context until PEDALS reflects the main-state change. A main press
-      # while armed is a main-off too: the KE has no CAN_OFF step.
-      if btns["CAN_OFF"] == 1 or (self.cruise_available and main_press):
+      # begun while armed is a main-off too (the KE has no CAN_OFF step); a main-on press is
+      # often still held when PEDALS arms, so only its rising edge counts.
+      if btns["CAN_OFF"] == 1 or (self.cruise_available and main_press and not self.main_button):
         self.cancel_context_frames = CANCEL_CONTEXT_FRAMES
       elif self.cancel_context_frames > 0:
         self.cancel_context_frames -= 1
@@ -411,7 +412,7 @@ class CarState(CarStateBase, CarStateExt):
 
     self.acc_active_last = ret.cruiseState.enabled
 
-    self.crz_btns_counter = cp.vl["CRZ_BTNS"]["CTR"]
+    self.crz_btns_counter = btns["CTR"]
 
     # camera signals
     self.cam_lkas = cp_cam.vl["CAM_LKAS"]
@@ -429,25 +430,25 @@ class CarState(CarStateBase, CarStateExt):
     prev_main_button = self.main_button
     prev_mrcc_button = self.mrcc_button
     prev_tja_button = self.tja_button
-    self.distance_button = cp.vl["CRZ_BTNS"]["DISTANCE_LESS"]
-    self.distance_more_button = cp.vl["CRZ_BTNS"]["DISTANCE_MORE"]
+    self.distance_button = btns["DISTANCE_LESS"]
+    self.distance_more_button = btns["DISTANCE_MORE"]
     # SET_P is the wheel's increase button; RES is a distinct resume button.
-    self.accel_button = cp.vl["CRZ_BTNS"]["SET_P"]
-    self.decel_button = cp.vl["CRZ_BTNS"]["SET_M"]
+    self.accel_button = btns["SET_P"]
+    self.decel_button = btns["SET_M"]
     # Publish CAN_OFF so ICBM does not transmit over a physical cancel press.
-    self.cancel_button = cp.vl["CRZ_BTNS"]["CAN_OFF"]
-    self.resume_button = cp.vl["CRZ_BTNS"]["RES"]
+    self.cancel_button = btns["CAN_OFF"]
+    self.resume_button = btns["RES"]
     self.main_button = int(main_press)
     # BIT1 is active-low: a 0 on the bus-0 parser is the wheel's MRCC master press. Gated on
     # the declaration (an undeclared wheel's idle level is unknown) and held unpressed until
     # the wheel's first frame: parser zeros before it would decode as a phantom press.
     if self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON:
       self.crz_btns_seen = self.crz_btns_seen or len(cp.vl_all["CRZ_BTNS"]["BIT1"]) > 0
-      self.mrcc_button = int(cp.vl["CRZ_BTNS"]["BIT1"] == 0) if self.crz_btns_seen else 0
+      self.mrcc_button = int(btns["BIT1"] == 0) if self.crz_btns_seen else 0
     else:
       self.mrcc_button = 0
     # Only a car declared to have the physical TJA button reports it as the MADS switch.
-    self.tja_button = int(cp.vl["CRZ_BTNS"]["TJA_BUTTON"] == 1) if self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON else 0
+    self.tja_button = int(btns["TJA_BUTTON"] == 1) if self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON else 0
 
     ret.buttonEvents = [
       *create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise}),

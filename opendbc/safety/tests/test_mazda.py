@@ -643,27 +643,31 @@ class TestMazdaLongitudinalSafety(TestMazdaSteerToZeroEpsSafety, common.Longitud
     self.assertTrue(self.safety.get_acc_main_on())
     self.assertTrue(self.safety.get_controls_allowed_lateral())
 
-  def test_main_button_off_lands_through_the_brake(self):
-    # route_ke_0b t+200: the KE turns MRCC off from the main button (MODE_X alone), no CAN_OFF.
-    # At a stop with the brake held the main-off was held as a dropout until the brake came up.
-    for main_y in (False, True):  # KE: MODE_X alone; 2022 CX-5: both
-      with self.subTest(main_y=main_y):
-        self.setUp()
-        self._armed()
-        for _ in range(10):
-          self._rx(self._pedals_msg(armed=True, brake=True))
-        self._rx(self._button_msg(main_x=True, main_y=main_y))
-        self._rx(self._button_msg())
-        self._rx(self._pedals_msg(armed=False, brake=True))
-        self.assertFalse(self.safety.get_acc_main_on())
-        self.assertFalse(self.safety.get_controls_allowed_lateral())
+  def _check_main_off_lands_through_the_brake(self, main_y):
+    self._armed()
+    for _ in range(10):
+      self._rx(self._pedals_msg(armed=True, brake=True))
+    self._rx(self._button_msg(main_x=True, main_y=main_y))
+    self._rx(self._button_msg())
+    self._rx(self._pedals_msg(armed=False, brake=True))
+    self.assertFalse(self.safety.get_acc_main_on())
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_main_button_off_lands_through_the_brake_ke(self):
+    # route_ke_0b t+200: the KE's main-off is MODE_X alone, no CAN_OFF
+    self._check_main_off_lands_through_the_brake(main_y=False)
+
+  def test_main_button_off_lands_through_the_brake_cx5_2022(self):
+    self._check_main_off_lands_through_the_brake(main_y=True)
 
   def test_main_button_on_does_not_open_context(self):
-    # a press with main off is a main-on: a brake-only dropout right after it is still held
+    # a press begun with main off is a main-on, and PEDALS often arms before it is released
+    # (route_ke_0b t+0.14): a brake-only dropout right after it is still held
     self.safety.set_mads_params(True, False, False)
-    self._rx(self._button_msg(main_x=True))
-    self._rx(self._button_msg())
+    self._rx(self._button_msg(main_y=True))
     self._rx(self._pedals_msg(armed=True, brake=True))
+    self._rx(self._button_msg(main_y=True))
+    self._rx(self._button_msg())
     self._rx(self._pedals_msg(armed=False, brake=True))
     self.assertTrue(self.safety.get_acc_main_on())
 
