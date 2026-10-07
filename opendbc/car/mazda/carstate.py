@@ -11,7 +11,7 @@ ButtonType = structs.CarState.ButtonEvent.Type
 FSC_SETTLE_FRAMES = int(CarControllerParams.FSC_SETTLE_T / DT_CTRL)
 STOCK_RADAR_ALIVE_FRAMES = int(CarControllerParams.STOCK_RADAR_ALIVE_T / DT_CTRL)
 STOCK_RADAR_GUARD_FRAMES = round(CarControllerParams.STOCK_RADAR_GUARD_T / DT_CTRL)
-CANCEL_CONTEXT_FRAMES = int(CarControllerParams.CANCEL_CONTEXT_T / DT_CTRL)
+MAIN_OFF_DEBOUNCE_SAMPLES = round(CarControllerParams.MAIN_OFF_DEBOUNCE_T * 100)  # PEDALS is 100 Hz
 CAM_LANEINFO_FRESH_FRAMES = int(CarControllerParams.CAM_LANEINFO_FRESH_T / DT_CTRL)
 LKAS_REARM_FRAMES = round(CarControllerParams.LKAS_REARM_T / DT_CTRL)
 LKAS_REARM_FAULT_FRAMES = round(CarControllerParams.LKAS_REARM_FAULT_T / DT_CTRL)
@@ -111,7 +111,7 @@ class CarState(CarStateBase, CarStateExt):
     self.radar_restore_failed = False
     self.radar_handback_active = False
     self.radar_was_silenced = False
-    self.cancel_context_frames = 0
+    self.main_off_samples = 0
     self.cam_laneinfo_seen = False
     self.cam_laneinfo_silent_frames = 0
     # The camera's last CAM_LANEINFO payload and its staleness, for the white-wheel HUD gate.
@@ -283,30 +283,28 @@ class CarState(CarStateBase, CarStateExt):
     ret.stockFcw = (self.cam_empty_seen and cam_empty["STATUS"] != 0x7F) or \
                    ped["PED_WARNING"] == 1 or ped["BRAKE_WARNING"] == 1
 
-    # The MRCC main button sets MODE_X, MODE_Y or both: MODE_Y alone is a main-on on both the
-    # KE and the 2022 CX-5 (59 of 59 logged), MODE_X alone the KE's main-off (route_ke_0b).
     btns = cp.vl["CRZ_BTNS"]
-    main_press = btns["MODE_X"] == 1 or btns["MODE_Y"] == 1
     acc_armed = cp.vl["PEDALS"]["ACC_OFF"] == 1
     acc_active = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
     # Both longitudinal modes: the TJA-press cleanup and the white-wheel HUD gate read it.
     self.mrcc_armed_raw = acc_armed or acc_active
 
     if self.CP.openpilotLongitudinalControl:
-      # After radar teardown, derive cruise state from PEDALS. Hold the previous state through
-      # brake-only samples where both cruise bits are transiently low.
+      # After radar teardown, derive cruise state from PEDALS. Main follows arming and falls once
+      # both bits have been low for MAIN_OFF_DEBOUNCE_T of PEDALS samples, counted per sample so
+      # the panda's acc_main_on falls on the same one. Brake or no brake: every both-low run
+      # under braking in the corpus was a real main-off, by CAN_OFF, either main-button encoding,
+      # or no visible button at all.
+      pedals = cp.vl_all["PEDALS"]
+      for off, active in zip(pedals["ACC_OFF"], pedals["ACC_ACTIVE"], strict=True):
+        if off or active:
+          self.cruise_available = True
+          self.main_off_samples = 0
+        else:
+          self.main_off_samples = min(self.main_off_samples + 1, MAIN_OFF_DEBOUNCE_SAMPLES)
+          if self.main_off_samples >= MAIN_OFF_DEBOUNCE_SAMPLES:
+            self.cruise_available = False
       brake_free = not ret.brakePressed and not self.brake_pressed_prev
-      # Retain wheel-cancel context until PEDALS reflects the main-state change. A main press
-      # begun while armed is a main-off too (the KE has no CAN_OFF step); a main-on press is
-      # often still held when PEDALS arms, so only its rising edge counts.
-      if btns["CAN_OFF"] == 1 or (self.cruise_available and main_press and not self.main_button):
-        self.cancel_context_frames = CANCEL_CONTEXT_FRAMES
-      elif self.cancel_context_frames > 0:
-        self.cancel_context_frames -= 1
-      if acc_armed or acc_active:
-        self.cruise_available = True
-      elif brake_free or self.cancel_context_frames > 0:
-        self.cruise_available = False
       if acc_armed or acc_active or self.cruise_enabled or brake_free:
         self.cruise_enabled = acc_active
 
@@ -438,7 +436,9 @@ class CarState(CarStateBase, CarStateExt):
     # Publish CAN_OFF so ICBM does not transmit over a physical cancel press.
     self.cancel_button = btns["CAN_OFF"]
     self.resume_button = btns["RES"]
-    self.main_button = int(main_press)
+    # The MRCC main button sets MODE_X, MODE_Y or both: MODE_Y alone is a main-on on both the
+    # KE and the 2022 CX-5 (59 of 59 logged), MODE_X alone the KE's main-off (route_ke_0b).
+    self.main_button = int(btns["MODE_X"] == 1 or btns["MODE_Y"] == 1)
     # BIT1 is active-low: a 0 on the bus-0 parser is the wheel's MRCC master press. Gated on
     # the declaration (an undeclared wheel's idle level is unknown) and held unpressed until
     # the wheel's first frame: parser zeros before it would decode as a phantom press.
