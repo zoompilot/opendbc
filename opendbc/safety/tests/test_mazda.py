@@ -3,6 +3,7 @@ import unittest
 from collections import deque
 
 from opendbc.car.lateral import apply_driver_steer_torque_limits
+from opendbc.car.mazda.carstate import MAIN_OFF_DEBOUNCE_SAMPLES
 from opendbc.car.mazda.values import CAR, CarControllerParams, MazdaFlags, MazdaSafetyFlags
 from opendbc.car.structs import CarParams
 from opendbc.sunnypilot.car.mazda.values import MazdaSafetyFlagsSP
@@ -11,7 +12,7 @@ import opendbc.safety.tests.common as common
 from opendbc.safety.tests.common import CANPackerSafety, make_msg
 
 # both-low PEDALS samples before main falls; carstate's test pins mazda.h to the same number
-DEBOUNCE = round(CarControllerParams.MAIN_OFF_DEBOUNCE_T * 100)  # PEDALS is 100 Hz
+DEBOUNCE = MAIN_OFF_DEBOUNCE_SAMPLES
 
 
 class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTest):

@@ -183,21 +183,20 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
         // Main mirrors carstate's cruise_available sample for sample: it follows arming and falls
         // after MAZDA_MAIN_OFF_DEBOUNCE both-low samples, brake or no brake. A main that falls on
         // one side only steers MADS into rejected frames (route 000001c9--0b2a64a214 seg 0).
-        if (acc_armed) {
-          mazda_main_off_samples = 0U;
-        } else if (mazda_main_off_samples < MAZDA_MAIN_OFF_DEBOUNCE) {
-          mazda_main_off_samples += 1U;
-        } else {
-        }
         if (mazda_tja_button) {
           // the button is the lateral switch; MRCC is cruise only
         } else if (acc_armed) {
           // Main follows PEDALS arming from the first frame; the radar takeover gates cruise
           // (controls_allowed below), never main.
           acc_main_on = true;
-        } else if (mazda_main_off_samples >= MAZDA_MAIN_OFF_DEBOUNCE) {
-          acc_main_on = false;
+          mazda_main_off_samples = 0U;
         } else {
+          if (mazda_main_off_samples < MAZDA_MAIN_OFF_DEBOUNCE) {
+            mazda_main_off_samples += 1U;
+          }
+          if (mazda_main_off_samples >= MAZDA_MAIN_OFF_DEBOUNCE) {
+            acc_main_on = false;
+          }
         }
 
         if (acc_armed || cruise_engaged_prev || brake_free) {

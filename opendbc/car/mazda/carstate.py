@@ -101,7 +101,6 @@ class CarState(CarStateBase, CarStateExt):
     # Unfiltered PEDALS cruise state; the filtered public state bridges brake dropouts.
     self.mrcc_armed_raw = False
     self.cruise_enabled_blocked = True
-    self.brake_pressed_prev = False
     self.stock_radar_silent_frames = 0
     self.stock_radar_seen = False
     self.main_can_silent_frames = {name: fresh for name, (_, fresh) in MAIN_CAN_WITNESSES.items()}
@@ -283,7 +282,6 @@ class CarState(CarStateBase, CarStateExt):
     ret.stockFcw = (self.cam_empty_seen and cam_empty["STATUS"] != 0x7F) or \
                    ped["PED_WARNING"] == 1 or ped["BRAKE_WARNING"] == 1
 
-    btns = cp.vl["CRZ_BTNS"]
     acc_armed = cp.vl["PEDALS"]["ACC_OFF"] == 1
     acc_active = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
     # Both longitudinal modes: the TJA-press cleanup and the white-wheel HUD gate read it.
@@ -304,9 +302,7 @@ class CarState(CarStateBase, CarStateExt):
           self.main_off_samples = min(self.main_off_samples + 1, MAIN_OFF_DEBOUNCE_SAMPLES)
           if self.main_off_samples >= MAIN_OFF_DEBOUNCE_SAMPLES:
             self.cruise_available = False
-      brake_free = not ret.brakePressed and not self.brake_pressed_prev
-      if acc_armed or acc_active or self.cruise_enabled or brake_free:
-        self.cruise_enabled = acc_active
+      self.cruise_enabled = acc_active
 
       # Block engagement until stock radar ownership is clear. Radar traffic after a completed
       # teardown is a fault and triggers the alpha-long recovery path.
@@ -364,7 +360,6 @@ class CarState(CarStateBase, CarStateExt):
       # CRZ_AVAILABLE represents adaptive-cruise availability, not the main switch.
       ret.cruiseState.available = cp.vl["CRZ_CTRL"]["CRZ_AVAILABLE"] == 1
       ret.cruiseState.enabled = cp.vl["CRZ_CTRL"]["CRZ_ACTIVE"] == 1
-    self.brake_pressed_prev = ret.brakePressed
     # PEDALS.STANDSTILL means wheels stopped, not ACC hold. Reporting it under openpilot
     # longitudinal would prevent LongControl from leaving its stopping state.
     ret.cruiseState.standstill = cp.vl["PEDALS"]["STANDSTILL"] == 1 and not self.CP.openpilotLongitudinalControl
@@ -410,6 +405,7 @@ class CarState(CarStateBase, CarStateExt):
 
     self.acc_active_last = ret.cruiseState.enabled
 
+    btns = cp.vl["CRZ_BTNS"]
     self.crz_btns_counter = btns["CTR"]
 
     # camera signals
