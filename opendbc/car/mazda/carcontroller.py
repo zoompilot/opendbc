@@ -344,7 +344,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       alert = mazdacan.create_alert_command(self.packer, CS.cam_laneinfo, visual_alert == VisualAlert.ldw, steer_required)
       payload = hud_base if white else alert[1]
       alert = (alert[0], mazdacan.apply_mads_white_hud(fsc_raw, payload, white), alert[2])
-      self.mads_white_hud_on_bus = mazdacan.is_mads_white_hud(alert[1])
+      self.mads_white_hud_on_bus = white
       self.dash_warning_on_bus = steer_required
       return [alert]
     return []

@@ -249,14 +249,6 @@ def apply_mads_white_hud(fsc_raw: bytes | None, packed_dat: bytes, enabled: bool
   return bytes(a ^ b for a, b in zip(packed_dat, MADS_HUD_WHITE_TJA_XOR, strict=True))
 
 
-def is_mads_white_hud(dat: bytes) -> bool:
-  """True when dat is an allowlisted base with only the WHITE TJA bit set."""
-  if len(dat) != 8:
-    return False
-  base = bytes(a ^ b for a, b in zip(dat, MADS_HUD_WHITE_TJA_XOR, strict=True))
-  return base in MADS_HUD_SAFE_BASE_PAYLOADS and dat != base
-
-
 def create_button_cmd(packer, CP, counter, button):
   can = int(button == Buttons.CANCEL)
   res = int(button == Buttons.RESUME)

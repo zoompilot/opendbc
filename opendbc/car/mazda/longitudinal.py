@@ -105,7 +105,6 @@ class AdvertisedLead:
     self.flip_frames = 0
     self.holding = False
     self.lead = None
-    self.real_lead = None
     self._measured = None
 
   def update(self, lead_visible: bool, d_rel: float, v_rel: float, holding: bool) -> None:
@@ -126,8 +125,7 @@ class AdvertisedLead:
       # Propagate range through the gap instead of repeating a frozen track.
       d, v = self._measured
       self._measured = (d + v * DT_CTRL, v)
-    self.real_lead = self._measured if self.visible else None
-    self.lead = self.real_lead
+    self.lead = self._measured if self.visible else None
     self.holding = holding
 
   @property

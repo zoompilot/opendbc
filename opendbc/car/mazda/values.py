@@ -44,8 +44,7 @@ class CarControllerParams:
   # about 12x the longest stock CRZ_INFO gap observed, the value every engaged drive ran on.
   STOCK_RADAR_GUARD_T = 1.27
   RADAR_SESSION_LIMIT_T = 10.0  # per-attempt UDS budget
-  # CAM_LANEINFO runs near 2 Hz, so its freshness window must exceed one period.
-  CAM_LANEINFO_PERIOD_T = 0.563
+  # CAM_LANEINFO runs near 2 Hz (longest period 0.563 s), so its freshness window must exceed one period.
   CAM_LANEINFO_FRESH_T = 1.5
 
   # The car's lane keep back on, the EPS re-arms: LKAS_BLOCK with TRACK_STATE for 3.00 to 3.08 s

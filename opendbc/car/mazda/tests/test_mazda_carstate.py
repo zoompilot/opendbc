@@ -35,8 +35,8 @@ SETTLED = bytes([0x42, 0b00000001, 0, 0, 0, 0, 0, 0])       # markers clear: set
 BIT2_LATCHED = bytes([0x41, 0b00100001, 0, 0, 0, 0, 0, 0])  # BIT2 (HBC armed) high for a whole cycle
 FAULTED = bytes([0x42, 0b00000001, 0, 0, 0, 0x01, 0, 0])    # ERR_BIT (bit 40) set
 
-# Exercise CAM_LANEINFO at its longest measured period so freshness tests match the bus cadence.
-CAM_LANEINFO_PERIOD_FRAMES = int(CarControllerParams.CAM_LANEINFO_PERIOD_T / DT_CTRL)
+# Exercise CAM_LANEINFO at its longest measured period, 0.563 s, so freshness tests match the bus cadence.
+CAM_LANEINFO_PERIOD_FRAMES = int(0.563 / DT_CTRL)
 
 SETTLE_T = CarControllerParams.FSC_SETTLE_T
 GUARD_T = CarControllerParams.STOCK_RADAR_GUARD_T
