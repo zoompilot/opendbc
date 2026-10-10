@@ -22,6 +22,8 @@ from opendbc.car.mazda.values import CAR, CarControllerParams
 
 DBC_NAME = "mazda_2017"
 
+Ecu = structs.CarParams.Ecu
+
 LongCtrlState = structs.CarControl.Actuators.LongControlState
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 SendButtonState = structs.IntelligentCruiseButtonManagement.SendButtonState
@@ -50,6 +52,23 @@ TESTER_PRESENT_DAT = bytes([0x02, 0x3e, 0x80, 0, 0, 0, 0, 0])
 
 
 # CarParams and port objects
+
+def car_fw(ecu, address: int, version: bytes) -> structs.CarParams.CarFw:
+  fw = structs.CarParams.CarFw()
+  fw.ecu = ecu
+  fw.address = address
+  fw.subAddress = 0
+  fw.fwVersion = version
+  return fw
+
+
+def eps_fw(version: bytes) -> list[structs.CarParams.CarFw]:
+  return [car_fw(Ecu.eps, 0x730, version)]
+
+
+def radar_fw(version: bytes) -> structs.CarParams.CarFw:
+  return car_fw(Ecu.fwdRadar, 0x764, version)
+
 
 def car_params(candidate=CAR.MAZDA_CX5_2022, alpha_long=False, car_fw=None) -> structs.CarParams:
   return CarInterface.get_params(candidate, gen_empty_fingerprint(), car_fw or [],

@@ -15,7 +15,8 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.mazda.carcontroller import CarController
 from opendbc.car.mazda.fingerprints import FW_VERSIONS
 from opendbc.car.mazda.interface import CarInterface
-from opendbc.car.mazda.tests.conftest import CAM_LKAS, CAM_LANEINFO, DBC_NAME, car_interface, car_params, car_params_sp
+from opendbc.car.mazda.tests.conftest import CAM_LKAS, CAM_LANEINFO, DBC_NAME, car_interface, car_params, car_params_sp, eps_fw, \
+  radar_fw
 from opendbc.car.mazda.values import CAR, DBC, G46L_RADAR_FW, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, STEER_TO_ZERO_PLATFORMS, \
   MazdaFlags, MazdaSafetyFlags
 
@@ -29,24 +30,6 @@ LEGACY_FW_EPS = b'K319-3210X-B-00' + b'\x00' * 9
 UNLISTED_EPS_FW = b'KSD5-3210X-D-00' + b'\x00' * 9
 
 MIN_STEER_SPEED_STOCK_EPS = LKAS_LIMITS.DISABLE_SPEED * CV.KPH_TO_MS
-
-
-def eps_fw(version: bytes) -> list[structs.CarParams.CarFw]:
-  fw = structs.CarParams.CarFw()
-  fw.ecu = Ecu.eps
-  fw.address = 0x730
-  fw.subAddress = 0
-  fw.fwVersion = version
-  return [fw]
-
-
-def radar_fw(version: bytes) -> structs.CarParams.CarFw:
-  fw = structs.CarParams.CarFw()
-  fw.ecu = Ecu.fwdRadar
-  fw.address = 0x764
-  fw.subAddress = 0
-  fw.fwVersion = version
-  return fw
 
 
 # padded to the 24-byte fw field the UDS query returns; the padding length is
