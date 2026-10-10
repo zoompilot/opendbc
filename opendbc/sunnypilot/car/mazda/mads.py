@@ -9,7 +9,6 @@ from enum import StrEnum
 
 from opendbc.can.parser import CANParser
 from opendbc.car import Bus, DT_CTRL, structs
-from opendbc.car.mazda import mazdacan
 from opendbc.sunnypilot.car.mazda.icbm import BUTTONS
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from opendbc.sunnypilot.mads_base import MadsCarStateBase
@@ -25,6 +24,73 @@ TJA_MRCC_TX_PERIOD = 0.2  # s between undo presses
 TJA_MRCC_ARM_WAIT_FRAMES = int(1.0 / DT_CTRL)
 # The white wheel waits this long on a fully-off, quiet cruise before it displays.
 MADS_WHITE_HUD_OFF_CONFIRM_FRAMES = int(0.5 / DT_CTRL)
+
+
+# The MADS white wheel: the dash draws it when the camera's own HUD frame carries TJA=2,
+# and the body reads the same frame. The white bit is only ever XORed into an exact
+# camera payload audited to be an idle frame, never a frame we composed. Every observed
+# FSC idle family on TJA-declared cars is enumerated: the OFF family with its
+# counter-nibble twins, the LINE_VISIBLE families and their high-beam variants, and the
+# partial-lane LANE_LINES=3/4 encodings. Exact bases only; do not widen to a field-based
+# rule until more captures are audited. No base may carry ERR_BIT, NO_ERR_BIT (byte 1 0x40,
+# unsettled camera in carstate's takeover gate), LDW or a hands warning.
+MADS_HUD_SAFE_BASE_PAYLOADS = frozenset(bytes.fromhex(h) for h in (
+  "4201000000001040", "4201000000001060", "4221000000004040", "4221000000001040",
+  "4221000000001060", "4201000000004040", "0221000000000040", "4201000000000040",
+  "4221000000000040", "0221000000001040", "4102000000001040",
+  "4122000000001040", "4102000000004040", "4122000000004040",
+  "4221000000004060", "4122000000000040", "4103000000001040", "4104000000001040",
+  "4123000000000040", "4124000000000040", "4123000000001040", "4124000000001040",
+  "4123000000004040", "4124000000004040", "4102000000001060", "4102000000004060",
+  "4122000000001060", "4122000000004060", "0122000000000040", "0122000000004040",
+  "4202000000001040", "4102000000000040",
+))
+# OFF to WHITE is TJA 0 to 2 only: one bit, byte 4 0x20, XORed in, never a frame swap.
+MADS_HUD_WHITE_TJA_XOR = bytes.fromhex("0000000020000000")
+# 64-bit big-endian keep-mask over the bits an idle camera may still move between
+# samples: TJA (byte 4, 0x70), TJA_TRANSITION (byte 3, 0x0C), and the unnamed byte-3
+# transition bits 0x03. Do not clear byte-4 0x80 or unrelated byte-0 family bits.
+# Every allowlisted base carries zero in the masked bits, so no two bases share a key.
+CAM_LANEINFO_TJA_NORMALIZE_MASK = 0xFFFFFFF08FFFFFFF
+_MADS_HUD_SAFE_BASE_BY_INT = {
+  int.from_bytes(b, "big") & CAM_LANEINFO_TJA_NORMALIZE_MASK: b
+  for b in MADS_HUD_SAFE_BASE_PAYLOADS
+}
+
+
+def white_hud_allowlist_base(fsc_raw: bytes | None) -> bytes | None:
+  """The allowlisted idle base for the camera's current frame, TJA/transition bits ignored."""
+  if fsc_raw is None or len(fsc_raw) != 8:
+    return None
+  return _MADS_HUD_SAFE_BASE_BY_INT.get(
+    int.from_bytes(fsc_raw, "big") & CAM_LANEINFO_TJA_NORMALIZE_MASK
+  )
+
+
+def apply_mads_white_hud(fsc_raw: bytes | None, packed_dat: bytes, enabled: bool) -> bytes:
+  """Set TJA=2 on the camera's own allowlisted idle frame, and on nothing else.
+
+  packed_dat must be exactly the base the camera's current frame normalizes to: any other
+  payload, or an unknown camera frame, passes through untouched.
+  """
+  if not enabled or len(packed_dat) != 8:
+    return packed_dat
+  if packed_dat != white_hud_allowlist_base(fsc_raw):
+    return packed_dat
+  return bytes(a ^ b for a, b in zip(packed_dat, MADS_HUD_WHITE_TJA_XOR, strict=True))
+
+
+def create_mrcc_off_cmd(packer, counter):
+  # The wheel's MRCC master press, active-low: every button bit 0 with its inversion 1,
+  # the master signature in BIT1/BIT1_INV plus BIT2/BIT3, counter plus one. Only the
+  # TJA-press cleanup sends it, and the panda pins the exact bytes in mazda_mrcc_off_msg_valid.
+  values = {
+    "CAN_OFF_INV": 1, "SET_P_INV": 1, "RES_INV": 1, "SET_M_INV": 1,
+    "DISTANCE_LESS_INV": 1, "DISTANCE_MORE_INV": 1, "MODE_X_INV": 1, "MODE_Y_INV": 1,
+    "BIT1_INV": 1, "BIT2": 1, "BIT3": 1,
+    "CTR": (counter + 1) % 16,
+  }
+  return packer.make_can_msg("CRZ_BTNS", 0, values)
 
 
 class MadsCarController:
@@ -118,7 +184,7 @@ class MadsCarController:
     # where the master press would arm instead of disarm. last_button_frame also paces ICBM.
     if raw_armed and self.mrcc_undo_frames < TJA_MRCC_MAX_TX_FRAMES and \
        (self.frame - self.last_button_frame) * DT_CTRL > TJA_MRCC_TX_PERIOD:
-      can_sends.append(mazdacan.create_mrcc_off_cmd(self.packer, CS.crz_btns_counter))
+      can_sends.append(create_mrcc_off_cmd(self.packer, CS.crz_btns_counter))
       self.last_button_frame = self.frame
       self.mrcc_undo_frames += 1
       if self.mrcc_undo_frames >= TJA_MRCC_MAX_TX_FRAMES:
@@ -150,7 +216,7 @@ class MadsCarController:
       bool(self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON) and
       CC_SP.mads.active and
       CS.cam_laneinfo_live and
-      mazdacan.white_hud_allowlist_base(CS.cam_laneinfo_raw) is not None and
+      white_hud_allowlist_base(CS.cam_laneinfo_raw) is not None and
       CC.hudControl.visualAlert == VisualAlert.none and
       not button_activity and
       mrcc_off
@@ -164,9 +230,9 @@ class MadsCarController:
   def white_hud_frame(self, CS, alert, white: bool):
     """The alert frame as sent: the camera's own allowlisted idle base with TJA=2 when white."""
     fsc_raw = CS.cam_laneinfo_raw
-    payload = mazdacan.white_hud_allowlist_base(fsc_raw) if white else alert[1]
+    payload = white_hud_allowlist_base(fsc_raw) if white else alert[1]
     self.mads_white_hud_on_bus = white
-    return alert[0], mazdacan.apply_mads_white_hud(fsc_raw, payload, white), alert[2]
+    return alert[0], apply_mads_white_hud(fsc_raw, payload, white), alert[2]
 
 
 class MadsCarState(MadsCarStateBase):

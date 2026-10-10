@@ -13,6 +13,8 @@ and an unsafe state already on the bus is withdrawn immediately, outside the 2 H
 import pytest
 
 from opendbc.car.mazda import mazdacan
+from opendbc.sunnypilot.car.mazda.mads import MADS_HUD_SAFE_BASE_PAYLOADS, MADS_HUD_WHITE_TJA_XOR, apply_mads_white_hud, \
+  white_hud_allowlist_base
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 
 from opendbc.car.mazda.tests.conftest import (CAM_LANEINFO, SendButtonState, VisualAlert, car_controller,
@@ -28,7 +30,20 @@ def hud_frames(sends) -> list[bytes]:
 
 def is_white(dat: bytes) -> bool:
   """An allowlisted idle base with exactly the white TJA bit XORed in."""
-  return bytes(a ^ b for a, b in zip(dat, mazdacan.MADS_HUD_WHITE_TJA_XOR, strict=True)) in mazdacan.MADS_HUD_SAFE_BASE_PAYLOADS
+  return bytes(a ^ b for a, b in zip(dat, MADS_HUD_WHITE_TJA_XOR, strict=True)) in MADS_HUD_SAFE_BASE_PAYLOADS
+
+
+def test_white_hud_allowlist_maps_tja_states_to_their_idle_base():
+  # a frame that already carries a TJA/transition state maps back to its idle base
+  assert white_hud_allowlist_base(bytes.fromhex("4201000020001040")) == BASE
+  # the counter-nibble twins are separately audited entries, not normalized away
+  assert white_hud_allowlist_base(bytes.fromhex("4201000000001060")) == bytes.fromhex("4201000000001060")
+
+
+def test_apply_mads_white_hud_only_touches_an_allowlisted_base():
+  assert apply_mads_white_hud(BASE, BASE, True) == bytes.fromhex("4201000020001040")
+  assert apply_mads_white_hud(b"\xff" * 8, b"\xff" * 8, True) == b"\xff" * 8
+  assert apply_mads_white_hud(BASE, BASE, False) == BASE
 
 
 def tja_controller(alpha_long=True):
