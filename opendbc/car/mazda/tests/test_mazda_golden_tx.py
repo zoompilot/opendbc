@@ -36,9 +36,10 @@ from opendbc.can import CANPacker
 from opendbc.car import DT_CTRL
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.mazda.interface import CarInterface
-from opendbc.car.mazda.tests.conftest import (DBC_NAME, LongCtrlState, SendButtonState, VisualAlert, car_control, car_control_sp,
-                                              car_controller, car_params, car_params_sp, eps_fw, mazda_car_state, radar_fw,
-                                              set_car_state, split_inputs)
+from opendbc.car.mazda.radar_session import RADAR_UDS_STEP
+from opendbc.car.mazda.tests.conftest import (DBC_NAME, SESSION_DFLT_DAT, SESSION_PROG_DAT, TESTER_PRESENT_DAT, LongCtrlState,
+                                              SendButtonState, VisualAlert, car_control, car_control_sp, car_controller, car_params,
+                                              car_params_sp, eps_fw, mazda_car_state, radar_fw, set_car_state, split_inputs)
 from opendbc.car.mazda.values import CAR, G46L_RADAR_FW
 from opendbc.safety.tests.libsafety import libsafety_py
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP, MazdaSafetyFlagsSP
@@ -234,16 +235,26 @@ def test_scenario_reaches_every_state():
   def crz_info_unlatching(phase):
     return any(int(dat[12:14], 16) & 0x40 for r in by_phase[phase] for addr, bus, dat in r["tx"] if addr == 0x21b and bus == 0)
 
+  def uds(phase):
+    return [(r["frame"], bytes.fromhex(dat)) for r in by_phase[phase] for addr, _, dat in r["tx"] if addr == 0x764]
+
   assert tx_addrs("boot_stock_radar") == {0x243, 0x440}
-  assert 0x764 in tx_addrs("fsc_settled_silencing") and 0x21b not in tx_addrs("fsc_settled_silencing")
+  # the teardown: programming-session requests at 2 Hz and no synthetic frame while the radar talks
+  assert uds("fsc_settled_silencing") and 0x21b not in tx_addrs("fsc_settled_silencing")
+  assert all(f % RADAR_UDS_STEP == 0 and d == SESSION_PROG_DAT for f, d in uds("fsc_settled_silencing"))
   assert {0x21b, 0x21c, 0x499, 0x364} <= tx_addrs("radar_silenced_armed_idle")
+  assert TESTER_PRESENT_DAT in {d for _, d in uds("radar_silenced_armed_idle")}
+  # the hand-back: default-session requests, never tester present, synthetic frames until the radar is back
+  assert SESSION_DFLT_DAT in {d for _, d in uds("handback")} and TESTER_PRESENT_DAT not in {d for _, d in uds("handback")}
+  assert 0x21b in tx_addrs("handback")
   assert max(r["torque_can"] for r in by_phase["engage_steer_ramp"]) > 1000
   # the 10 m/s command winds down at STEER_DELTA_DOWN a frame and settles on the 620 rail
   assert by_phase["highway_rail"][49]["torque_can"] == 620
   assert min(r["torque_can"] for r in by_phase["highway_rail"]) == -620
   assert {r["accel"] for r in by_phase["hold_on_the_plan"][-50:]} == {-1.024}
   assert {r["accel"] for r in by_phase["hold_body_latched"][-10:]} == {-0.001}
-  assert crz_info_unlatching("latched_release")
+  # a body-latched hold releases in-protocol: the pulse, and no button frame
+  assert crz_info_unlatching("latched_release") and 0x9d not in tx_addrs("latched_release")
   assert not crz_info_unlatching("never_latched_release_breakaway")
   assert max(r["accel"] for r in by_phase["never_latched_release_breakaway"]) > 0.45
   assert {r["accel"] for r in by_phase["gas_override"]} == {0.}

@@ -203,50 +203,6 @@ class TestRadarSessionSequencing:
       for _ in range(100):
         assert boot_step(cc, cs, stock_radar_alive=True, fsc_settled=settled, cruise_engaged=engaged) == []
 
-  def test_stock_state_is_silent(self, cc, cs):
-    # radar alive, gate not yet passed: nothing at all goes on the bus
-    for _ in range(200):
-      assert boot_step(cc, cs, stock_radar_alive=True, fsc_settled=False) == []
-
-  def test_boot_teardown_sequence(self, cc, cs):
-    # gate passes with the stock radar alive: programming-session requests at 2 Hz,
-    # still no synthetic frames and no tester present
-    for i in range(100):
-      sends = boot_step(cc, cs, stock_radar_alive=True, fsc_settled=True)
-      if i % RADAR_UDS_STEP == 0:
-        assert uds(sends) == [SESSION_PROG_DAT]
-      else:
-        assert uds(sends) == []
-      assert synthetic(sends) == []
-    # radar goes quiet: synthetic frames + tester present take over, session requests stop
-    saw_tester = False
-    for _ in range(100):
-      frame = cc.frame
-      sends = boot_step(cc, cs, stock_radar_alive=False, fsc_settled=True)
-      assert SESSION_PROG_DAT not in uds(sends)
-      if frame % CarControllerParams.LONG_STEP == 0:
-        assert len(synthetic(sends)) > 0
-      saw_tester |= TESTER_PRESENT_DAT in uds(sends)
-    assert saw_tester
-
-  def test_handback_sequence(self, cc, cs):
-    # reach SILENCED
-    boot_step(cc, cs, stock_radar_alive=False, fsc_settled=True)
-    # hand-back requested: default-session requests at 2 Hz, tester present stops,
-    # synthetic frames continue while the radar is still quiet
-    saw_default = False
-    for _ in range(100):
-      frame = cc.frame
-      sends = boot_step(cc, cs, stock_radar_alive=False, fsc_settled=True, handback=True)
-      assert TESTER_PRESENT_DAT not in uds(sends)
-      saw_default |= SESSION_DFLT_DAT in uds(sends)
-      if frame % CarControllerParams.LONG_STEP == 0:
-        assert len(synthetic(sends)) > 0
-    assert saw_default
-    # stock radar returns: everything stops
-    for _ in range(200):
-      assert boot_step(cc, cs, stock_radar_alive=True, fsc_settled=True, handback=True) == []
-
   def test_handback_before_teardown_stops_everything(self, cc, cs):
     # toggle-off while still waiting on the gate: no session ever entered, so no
     # hand-back traffic either
