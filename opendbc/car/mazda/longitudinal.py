@@ -6,15 +6,20 @@ See the LICENSE.md file in the root directory for more details.
 """
 from opendbc.car import DT_CTRL
 from opendbc.car.mazda import mazdacan
-from opendbc.car.mazda.values import CarControllerParams
 
-
-RESUME_UNLATCH_LATCHED_FRAMES = int(CarControllerParams.RESUME_UNLATCH_LATCHED_T / DT_CTRL)
-RESUME_REPULSE_FRAMES = int(CarControllerParams.RESUME_REPULSE_T / DT_CTRL)
-LEAD_DEBOUNCE_FRAMES = int(CarControllerParams.LEAD_DEBOUNCE_T / DT_CTRL)
-RELEASE_DEBOUNCE_FRAMES = int(CarControllerParams.RELEASE_DEBOUNCE_T / DT_CTRL)
-RELEASE_ACCEL = CarControllerParams.RELEASE_ACCEL
-BREAKAWAY_FRAMES = int(CarControllerParams.ACCEL_BREAKAWAY_T / DT_CTRL)
+# Stock body-latched releases use a RESUME_UNLATCHING pulse of 9 wire frames, the latched-family mode.
+RESUME_UNLATCH_LATCHED_FRAMES = int(0.18 / DT_CTRL)
+# Retry one unanswered body-latched release after this, the body still holding, then return control to the plan.
+RESUME_REPULSE_FRAMES = int(1.0 / DT_CTRL)
+# Debounce lead visibility before advertising a radar track.
+LEAD_DEBOUNCE_FRAMES = int(0.5 / DT_CTRL)
+# Debounce movement requests before releasing a standstill hold.
+RELEASE_DEBOUNCE_FRAMES = int(0.2 / DT_CTRL)
+# A plan must ask for more than this to open a hold: the e2e model drifts up to +0.19 at a stop
+# before its shouldStop lands, and every logged drive-off passes 0.25 within 1.1 s.
+RELEASE_ACCEL = 0.25  # m/s^2
+# The still-stopped breakaway ramp gives up after this.
+BREAKAWAY_FRAMES = int(3.0 / DT_CTRL)
 
 
 class StandstillHold:

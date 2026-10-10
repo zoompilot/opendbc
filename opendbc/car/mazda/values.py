@@ -34,7 +34,6 @@ class CarControllerParams:
   # Longitudinal message periods in 100 Hz control frames.
   LONG_STEP = 2        # CRZ_INFO/CRZ_CTRL at 50 Hz, matching stock
   RADAR_STEP = 10      # radar static + track frames at 10 Hz
-  RADAR_UDS_STEP = 50  # radar UDS traffic at 2 Hz: session control or tester present
 
   # Wait for the camera's cold-boot radar check before silencing the radar.
   FSC_SETTLE_T = 7.0           # observed-settled time before the teardown may start (check passed from 5.8 s)
@@ -43,7 +42,6 @@ class CarControllerParams:
   # Sustained radar silence before ownership is trusted (cruise; the main switch is not gated):
   # about 12x the longest stock CRZ_INFO gap observed, the value every engaged drive ran on.
   STOCK_RADAR_GUARD_T = 1.27
-  RADAR_SESSION_LIMIT_T = 10.0  # per-attempt UDS budget
   # CAM_LANEINFO runs near 2 Hz (longest period 0.563 s), so its freshness window must exceed one period.
   CAM_LANEINFO_FRESH_T = 1.5
 
@@ -53,22 +51,8 @@ class CarControllerParams:
   LKAS_REARM_T = 3.0           # no lift of the block counts before this
   LKAS_REARM_FAULT_T = 4.0     # the block it raises is not a fault for this long
 
-  # Stock body-latched releases use a nine-frame RESUME_UNLATCHING pulse.
-  RESUME_UNLATCH_LATCHED_T = 0.18  # s, 9 wire frames, the latched-family mode
-  # Retry one unanswered body-latched release, then return control to the plan.
-  RESUME_REPULSE_T = 1.0  # s after a latched release, the body still holding
-
   MAIN_OFF_DEBOUNCE_T = 0.1   # both PEDALS cruise bits low this long is a main-off; no transient dropout in 4026 segments
   CANCEL_SETTLE_T = 0.2       # s a cancel request must hold before the first press; the car answers its own inside it
-
-  # Debounce movement requests before releasing a standstill hold.
-  RELEASE_DEBOUNCE_T = 0.2
-  # A plan must ask for more than this to open a hold: the e2e model drifts up to +0.19 at a stop
-  # before its shouldStop lands, and every logged drive-off passes 0.25 within 1.1 s.
-  RELEASE_ACCEL = 0.25  # m/s^2
-
-  # Debounce lead visibility before advertising a radar track.
-  LEAD_DEBOUNCE_T = 0.5
 
   # Relax the command after the body ECU takes ownership of the brake hold.
   ACCEL_HOLD_LATCHED = -0.001  # m/s2
@@ -82,7 +66,6 @@ class CarControllerParams:
 
   # Permit a bounded breakaway ramp because Mazda longitudinal control has no integrator.
   ACCEL_BREAKAWAY_MAX = 1.45  # m/s2, ceiling for the still-stopped release ramp
-  ACCEL_BREAKAWAY_T = 3.0  # s
   ACCEL_BREAKAWAY_OVERSHOOT = 0.75  # m/s2 above the plan the still-stopped ramp may climb
 
   # Shape positive commands like stock MRCC (tools/mazda_long/accel_profile.py, 158 stock routes).

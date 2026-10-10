@@ -9,7 +9,8 @@ from opendbc.sunnypilot.car.stock_ecu import StockEcuState
 
 RADAR_ADDR = 0x764
 RADAR_BUS = 0
-RADAR_SESSION_LIMIT_FRAMES = int(CarControllerParams.RADAR_SESSION_LIMIT_T / DT_CTRL)
+RADAR_UDS_STEP = 50  # radar UDS traffic at 2 Hz: session control or tester present
+RADAR_SESSION_LIMIT_FRAMES = int(10.0 / DT_CTRL)  # per-attempt UDS budget
 # Require more than one fresh stock frame before allowing a process restart.
 RADAR_RESTORE_FRAMES = 2 * round(CarControllerParams.STOCK_RADAR_ALIVE_T / DT_CTRL)
 
@@ -131,7 +132,7 @@ class RadarSessionManager:
       # After the bounded request budget, stop diagnostics but continue neutral replacement
       # traffic while quiet. A late stock recovery can still complete the handback.
       if self.state == RadarSessionState.HANDBACK and not self.handback_failed and \
-         (not self.default_sent or not stock_radar_alive) and self.frame % CarControllerParams.RADAR_UDS_STEP == 0:
+         (not self.default_sent or not stock_radar_alive) and self.frame % RADAR_UDS_STEP == 0:
         self.diagnostic_message = create_radar_session_msg(uds.SESSION_TYPE.DEFAULT)
         self.default_sent = True
     elif not handback:
@@ -158,11 +159,11 @@ class RadarSessionManager:
           self._transition(RadarSessionState.SILENCED, "requested radar silence")
         elif self.state_frames >= RADAR_SESSION_LIMIT_FRAMES:
           self._silencing_gave_up("timed out")
-        elif self.frame % CarControllerParams.RADAR_UDS_STEP == 0:
+        elif self.frame % RADAR_UDS_STEP == 0:
           self.diagnostic_message = create_radar_session_msg(uds.SESSION_TYPE.PROGRAMMING)
           self.programming_sent = True
 
-      if self.state == RadarSessionState.SILENCED and self.frame % CarControllerParams.RADAR_UDS_STEP == 0:
+      if self.state == RadarSessionState.SILENCED and self.frame % RADAR_UDS_STEP == 0:
         self.diagnostic_message = make_tester_present_msg(RADAR_ADDR, RADAR_BUS, suppress_response=True)
 
     self._update_replacement(stock_radar_alive, bus_healthy, stock_radar_gone)
