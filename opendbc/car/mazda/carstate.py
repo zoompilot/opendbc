@@ -5,6 +5,7 @@ from opendbc.car.interfaces import CarStateBase
 from opendbc.car.mazda.radar_session import RadarSessionManager
 from opendbc.car.mazda.values import DBC, LKAS_LIMITS, CarControllerParams, MazdaFlags
 from opendbc.sunnypilot.car.mazda.carstate_ext import CarStateExt
+from opendbc.sunnypilot.car.mazda.mads import MadsCarState
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 
 ButtonType = structs.CarState.ButtonEvent.Type
@@ -31,9 +32,10 @@ def body_holds(pt) -> bool:
   return pt["EPB"]["HOLD_STATE"] == HOLD_STATE_HOLDING or pt["GEAR"]["BRAKE_HOLD"] == 1
 
 
-class CarState(CarStateBase, CarStateExt):
+class CarState(CarStateBase, MadsCarState, CarStateExt):
   def __init__(self, CP, CP_SP):
     CarStateBase.__init__(self, CP, CP_SP)
+    MadsCarState.__init__(self, CP, CP_SP)
     CarStateExt.__init__(self, CP, CP_SP)
 
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
@@ -87,16 +89,10 @@ class CarState(CarStateBase, CarStateExt):
     self.cancel_button = 0
     self.resume_button = 0
     self.main_button = 0
-    self.tja_button = 0
-    # Active-low wheel MRCC master (CRZ_BTNS.BIT1), read from the bus-0 parser: a 0 is a press.
-    self.mrcc_button = 0
-    self.crz_btns_seen = False
 
     # The car's own cruise state in either mode; the published one adds the radar guard.
     self.cruise_available = False
     self.cruise_enabled = False
-    # Unfiltered PEDALS cruise state; the filtered public state bridges brake dropouts.
-    self.mrcc_armed_raw = False
     self.cruise_enabled_blocked = True
     self.stock_radar_silent_frames = 0
     self.stock_radar_seen = False
@@ -266,11 +262,6 @@ class CarState(CarStateBase, CarStateExt):
     ret.stockFcw = (self.cam_empty_seen and cam_empty["STATUS"] != 0x7F) or \
                    ped["PED_WARNING"] == 1 or ped["BRAKE_WARNING"] == 1
 
-    acc_armed = cp.vl["PEDALS"]["ACC_OFF"] == 1
-    acc_active = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
-    # Both longitudinal modes: the TJA-press cleanup and the white-wheel HUD gate read it.
-    self.mrcc_armed_raw = acc_armed or acc_active
-
     if self.CP.openpilotLongitudinalControl:
       # After radar teardown, derive cruise state from PEDALS. Main follows arming and falls once
       # both bits have been low for MAIN_OFF_DEBOUNCE_T of PEDALS samples, counted per sample so
@@ -286,7 +277,7 @@ class CarState(CarStateBase, CarStateExt):
           self.main_off_samples = min(self.main_off_samples + 1, MAIN_OFF_DEBOUNCE_SAMPLES)
           if self.main_off_samples >= MAIN_OFF_DEBOUNCE_SAMPLES:
             self.cruise_available = False
-      self.cruise_enabled = acc_active
+      self.cruise_enabled = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
 
       # Block engagement until stock radar ownership is clear. Radar traffic after a completed
       # teardown is a fault and triggers the alpha-long recovery path.
@@ -405,8 +396,6 @@ class CarState(CarStateBase, CarStateExt):
     prev_cancel_button = self.cancel_button
     prev_resume_button = self.resume_button
     prev_main_button = self.main_button
-    prev_mrcc_button = self.mrcc_button
-    prev_tja_button = self.tja_button
     self.distance_button = btns["DISTANCE_LESS"]
     self.distance_more_button = btns["DISTANCE_MORE"]
     # SET_P is the wheel's increase button; RES is a distinct resume button.
@@ -418,16 +407,7 @@ class CarState(CarStateBase, CarStateExt):
     # The MRCC main button sets MODE_X, MODE_Y or both: MODE_Y alone is a main-on on both the
     # KE and the 2022 CX-5 (59 of 59 logged), MODE_X alone the KE's main-off (route_ke_0b).
     self.main_button = int(btns["MODE_X"] == 1 or btns["MODE_Y"] == 1)
-    # BIT1 is active-low: a 0 on the bus-0 parser is the wheel's MRCC master press. Gated on
-    # the declaration (an undeclared wheel's idle level is unknown) and held unpressed until
-    # the wheel's first frame: parser zeros before it would decode as a phantom press.
-    if self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON:
-      self.crz_btns_seen = self.crz_btns_seen or len(cp.vl_all["CRZ_BTNS"]["BIT1"]) > 0
-      self.mrcc_button = int(btns["BIT1"] == 0) if self.crz_btns_seen else 0
-    else:
-      self.mrcc_button = 0
-    # Only a car declared to have the physical TJA button reports it as the MADS switch.
-    self.tja_button = int(btns["TJA_BUTTON"] == 1) if self.CP_SP.flags & MazdaFlagsSP.TJA_BUTTON else 0
+    MadsCarState.update_mads(self, ret, can_parsers)
 
     ret.buttonEvents = [
       *create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise}),
@@ -437,8 +417,8 @@ class CarState(CarStateBase, CarStateExt):
       *create_button_events(self.resume_button, prev_resume_button, {1: ButtonType.resumeCruise}),
       *create_button_events(self.main_button, prev_main_button, {1: ButtonType.mainCruise}),
       # A held press of this button must freeze ICBM through the cruise button timers in the openpilot tree.
-      *create_button_events(self.mrcc_button, prev_mrcc_button, {1: ButtonType.mainCruise}),
-      *create_button_events(self.tja_button, prev_tja_button, {1: ButtonType.lkas}),
+      *create_button_events(self.mrcc_button, self.prev_mrcc_button, {1: ButtonType.mainCruise}),
+      *create_button_events(self.tja_button, self.prev_tja_button, {1: ButtonType.lkas}),
     ]
 
     CarStateExt.update(self, ret, ret_sp, can_parsers)
