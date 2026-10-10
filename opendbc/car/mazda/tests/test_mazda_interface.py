@@ -13,9 +13,7 @@ from opendbc.car import Bus, structs
 from opendbc.car.can_definitions import CanData
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.mazda.fingerprints import FW_VERSIONS
-from opendbc.car.mazda.interface import CarInterface
-from opendbc.car.mazda.tests.conftest import CAM_LKAS, CAM_LANEINFO, car_interface, car_params, car_params_sp, eps_fw, \
-  radar_fw
+from opendbc.car.mazda.tests.conftest import CAM_LKAS, CAM_LANEINFO, car_interface, car_params, eps_fw, radar_fw
 from opendbc.car.mazda.values import CAR, DBC, G46L_RADAR_FW, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, STEER_TO_ZERO_PLATFORMS, \
   MazdaFlags, MazdaSafetyFlags
 
@@ -302,18 +300,6 @@ class TestForeignRadar:
     assert not CP.radarUnavailable
     assert CP.alphaLongitudinalAvailable
     assert not CP.flags & MazdaFlags.G46L_RADAR
-
-
-class TestMovingTakeoverCapability:
-  """The moving takeover is a developer declaration, never a fingerprint rule yet."""
-
-  def test_param_sets_the_flag_under_alpha_long_only(self):
-    from opendbc.sunnypilot.car.interfaces import setup_interfaces
-    for alpha_long, declared, expect in ((True, "1", True), (True, "0", False), (False, "1", False)):
-      CP = car_params(CAR.MAZDA_CX5_2022, alpha_long=alpha_long, car_fw=eps_fw(SWAPPED_EPS_FW))
-      CP_SP = car_params_sp(CP, CAR.MAZDA_CX5_2022, alpha_long=alpha_long)
-      setup_interfaces(CarInterface, CP, CP_SP, [{"MazdaMovingTakeover": declared}])
-      assert bool(CP.flags & MazdaFlags.MOVING_TAKEOVER) == expect
 
 
 class TestCamLaneinfoLatch:

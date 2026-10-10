@@ -309,53 +309,19 @@ def _stock(m, standstill, alive=True, refused=False, gate=True, handback=False, 
   return m.update(gate, alive, handback, standstill=standstill, session_refused=refused, stock_radar_gone=not alive, **kw)
 
 
-class TestMovingTakeover:
-  """A fresh session started with the car rolling (forced offroad exit, process restart): a
-  radar with a moving handover on record is requested at speed; every other radar waits for
-  the stop, and the status says which."""
+class TestParkedTakeover:
+  """A fresh session started with the car rolling (forced offroad exit, process restart) waits
+  for the stop, and the status says so."""
 
-  def test_capable_radar_is_requested_while_moving(self):
-    m = RadarSessionManager(moving_takeover=True)
-    assert _stock(m, standstill=False) == RadarSessionState.SILENCING
-    assert m.attempt_moving
-    while not m.programming_sent:
-      _stock(m, standstill=False)
-    assert _stock(m, standstill=False, alive=False) == RadarSessionState.SILENCED
-    assert m.status == StockEcuState.STARTING  # owned, guard not yet passed
-    _stock(m, standstill=False, alive=False, owned=True)
-    assert m.status == StockEcuState.READY
-
-  def test_default_configuration_waits_for_the_stop(self):
+  def test_a_rolling_session_waits_for_the_stop(self):
     m = RadarSessionManager()
     for _ in range(300):
       assert _stock(m, standstill=False) == RadarSessionState.STOCK
     assert m.status == StockEcuState.PARK_TO_TAKE_OVER
     assert _stock(m, standstill=True) == RadarSessionState.SILENCING
 
-  @pytest.mark.parametrize("how", ["refused", "timeout"])
-  def test_moving_refusal_leaves_the_parked_attempt_open(self, how):
-    # the radar saying no at speed says nothing about the parked path every configuration has
-    # on record: no more moving attempts this session, the next stop is requested as usual
-    m = RadarSessionManager(moving_takeover=True)
-    _stock(m, standstill=False)
-    if how == "refused":
-      assert _stock(m, standstill=False, refused=True) == RadarSessionState.HANDBACK
-    else:
-      for _ in range(RADAR_SESSION_LIMIT_FRAMES + 1):
-        state = _stock(m, standstill=False)
-      assert state == RadarSessionState.HANDBACK
-    assert not m.moving_open and not m.silencing_failed
-    for _ in range(RADAR_UDS_STEP + RADAR_RESTORE_FRAMES):
-      _stock(m, standstill=False)
-    assert m.state == RadarSessionState.STOCK and not m.handback_completed
-    for _ in range(200):
-      assert _stock(m, standstill=False) == RadarSessionState.STOCK
-    assert m.status == StockEcuState.PARK_TO_TAKE_OVER
-    assert _stock(m, standstill=True) == RadarSessionState.SILENCING
-    assert not m.attempt_moving
-
   def test_parked_refusal_is_definitive(self):
-    m = RadarSessionManager(moving_takeover=True)
+    m = RadarSessionManager()
     _stock(m, standstill=True)
     _stock(m, standstill=True, refused=True)
     assert m.silencing_failed
@@ -365,22 +331,12 @@ class TestMovingTakeover:
       assert _stock(m, standstill=standstill) == RadarSessionState.STOCK
     assert m.status == StockEcuState.FAILED
 
-  def test_motion_change_mid_attempt(self):
-    # capable: a parked attempt carries on when the car pulls away and a moving one when it
-    # stops; default: pulling away undoes the queued request, as before
-    m = RadarSessionManager(moving_takeover=True)
+  def test_pulling_away_undoes_the_queued_request(self):
+    m = RadarSessionManager()
     _stock(m, standstill=True)
     while not m.programming_sent:
       _stock(m, standstill=True)
-    assert _stock(m, standstill=False) == RadarSessionState.SILENCING
-    m2 = RadarSessionManager(moving_takeover=True)
-    _stock(m2, standstill=False)
-    assert _stock(m2, standstill=True) == RadarSessionState.SILENCING
-    m3 = RadarSessionManager()
-    _stock(m3, standstill=True)
-    while not m3.programming_sent:
-      _stock(m3, standstill=True)
-    assert _stock(m3, standstill=False) == RadarSessionState.HANDBACK
+    assert _stock(m, standstill=False) == RadarSessionState.HANDBACK
 
   def test_undone_request_leaves_the_next_attempt_open(self):
     # undoing our own request (motion on a parked-only radar) is not an ordered hand-back
@@ -395,9 +351,8 @@ class TestMovingTakeover:
     assert _stock(m, standstill=True) == RadarSessionState.SILENCING
 
   def test_returned_radar_is_only_resilenced_parked(self):
-    # a radar heard again under our frames came back through its own S3 timeout; a moving
-    # re-request is not on record for any configuration
-    m = RadarSessionManager(moving_takeover=True)
+    # a radar heard again under our frames came back through its own S3 timeout
+    m = RadarSessionManager()
     _stock(m, standstill=False, alive=False)
     assert m.state == RadarSessionState.SILENCED
     assert _stock(m, standstill=False) == RadarSessionState.STOCK
@@ -411,7 +366,7 @@ class TestStockEcuStatus:
   """The transition contract: the driver's view of ownership, in place on the manager."""
 
   def test_starting_covers_every_prerequisite(self):
-    m = RadarSessionManager(moving_takeover=True)
+    m = RadarSessionManager()
     _stock(m, standstill=True, gate=False)
     assert m.status == StockEcuState.STARTING
     _stock(m, standstill=True, bus_healthy=False)

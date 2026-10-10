@@ -83,7 +83,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.lead_adv = AdvertisedLead()
     self.long_counter = 0
     self.radar_counter = 0
-    self.radar_session = RadarSessionManager(moving_takeover=bool(CP.flags & MazdaFlags.MOVING_TAKEOVER))
+    self.radar_session = RadarSessionManager()
     self.accel_last = 0.
     self.release_ramp = None
     self.breakaway_frames = 0

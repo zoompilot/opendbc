@@ -155,10 +155,6 @@ class MazdaFlags(IntFlag):
 
   # The G46L radar's dialect bit; see G46L_RADAR_FW below.
   G46L_RADAR = 8
-  # The radar may be taken over while the car is moving: the developer's MazdaMovingTakeover
-  # param (opendbc/sunnypilot/car/interfaces.py), until a moving handover is on record for a
-  # radar firmware and this can become a fingerprint rule.
-  MOVING_TAKEOVER = 16
 
 
 class MazdaSafetyFlags(IntFlag):
