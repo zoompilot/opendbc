@@ -59,11 +59,6 @@ class CarState(CarStateBase, CarStateExt):
     # Our 0x243 frames the panda refused since the last cycle, reported back on the can stream
     # with src 192 (bus 0 + 0xC0). Zero-torque refusals while disengaged are not counted.
     self.lkas_rejected = 0
-    self.lkas_fault = False
-    # The camera's own TJA/CTS state from its 0x440: 0 off, 2 armed, 3 to 5 steering. Live,
-    # never latched; 0 when the camera is stale. Diagnostic only: the panda vetoes the camera's
-    # command whenever openpilot steers, and nothing here may press the camera's button (below).
-    self.stock_tja = 0
     # CAM_SETTINGS LKAS_INERVENTION_ON1: the car's own lane-keep switch, the wheel's TJA/LAS
     # button. The EPS echoes every LKAS request but applies none of it while this is off
     # (LKAS_EFFECTIVE 0, no LKAS_BLOCK, no fault), so it is an invalidLkasSetting like
@@ -246,10 +241,6 @@ class CarState(CarStateBase, CarStateExt):
     self.lkas_blocked = lkas_blocked
     self.lkas_effective = cp.vl["STEER_RATE"]["LKAS_EFFECTIVE"]
     self.lkas_track_state = cp.vl["STEER_RATE"]["LKAS_TRACK_STATE"] == 1
-    # The 2022 EPS raises LKAS_FAULT once its 0x243 stream has stopped for about 0.6 s; the
-    # camera's own fault follows 5.3 s later and neither clears before the next ignition cycle.
-    # Decoded for the log and tooling; the driver-facing fault stays the camera's own.
-    self.lkas_fault = cp.vl["STEER_RATE"]["LKAS_FAULT"] == 1
     # The panda refuses every LKA frame while it is not controlling, so a refused zero-torque
     # frame carries nothing the controller needs; count the torque requests it turned away.
     self.lkas_rejected = sum(1 for v in can_parsers[Bus.loopback].vl_all["CAM_LKAS"]["LKAS_REQUEST"] if v != 0)
@@ -412,7 +403,6 @@ class CarState(CarStateBase, CarStateExt):
     self.cam_lkas = cp_cam.vl["CAM_LKAS"]
     self.cam_laneinfo = cp_cam.vl["CAM_LANEINFO"]
     ret.steerFaultPermanent = cp_cam.vl["CAM_LKAS"]["ERR_BIT_1"] == 1
-    self.stock_tja = int(self.cam_laneinfo["TJA"]) if cam_laneinfo_fresh else 0
     self.hbc_request = cam_laneinfo_fresh and self.cam_laneinfo["BIT2"] == 1
 
     # Decode distance, set-speed, resume, cancel, and main-button events.

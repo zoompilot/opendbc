@@ -159,7 +159,7 @@ def set_car_state(cs: CarState, out=None, *, body_hold=False, stock_radar_alive=
                   fsc_settled=True, radar_was_silenced=False, radar_session_refused=False, radar_session_response=0,
                   radar_bus_healthy=True, steer_undelivered=False,
                   lkas_blocked=False, lkas_effective=0, steer_first_engage_hold=False, lkas_allowed_speed=True, lkas_rejected=0,
-                  lkas_fault=False, crz_btns_counter=0, stock_tja=0, hbc_request=False,
+                  crz_btns_counter=0, hbc_request=False,
                   cancel_button=0, accel_button=0, decel_button=0,
                   tja_button=0, mrcc_button=0,
                   mrcc_armed_raw=False, cruise_available=None, cruise_enabled=None,
@@ -198,9 +198,7 @@ def set_car_state(cs: CarState, out=None, *, body_hold=False, stock_radar_alive=
   cs.steer_first_engage_hold = steer_first_engage_hold
   cs.lkas_allowed_speed = lkas_allowed_speed
   cs.lkas_rejected = lkas_rejected
-  cs.lkas_fault = lkas_fault
   cs.crz_btns_counter = crz_btns_counter
-  cs.stock_tja = stock_tja
   cs.hbc_request = hbc_request
   cs.cancel_button = cancel_button
   cs.accel_button = accel_button

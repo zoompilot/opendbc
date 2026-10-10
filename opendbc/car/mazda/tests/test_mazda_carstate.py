@@ -14,7 +14,7 @@ from opendbc.car import Bus, DT_CTRL
 from opendbc.car import structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.mazda import mazdacan
-from opendbc.car.mazda.carstate import ButtonType, CAM_LANEINFO_FRESH_FRAMES, LKAS_REARM_FRAMES, LKAS_REARM_FAULT_FRAMES, MAIN_OFF_DEBOUNCE_SAMPLES
+from opendbc.car.mazda.carstate import ButtonType, LKAS_REARM_FRAMES, LKAS_REARM_FAULT_FRAMES, MAIN_OFF_DEBOUNCE_SAMPLES
 from opendbc.car.mazda.tests.conftest import car_interface, car_params, car_params_sp, packer
 from opendbc.car.mazda.values import CAR, CarControllerParams
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
@@ -504,28 +504,14 @@ class UndeliveredRig:
     self.packer = packer()
     self.frame = 0
 
-  def step(self, request, effective, blocked, speed_kph=40., driver_torque=0, track_state=0, fault=0):
+  def step(self, request, effective, blocked, speed_kph=40., driver_torque=0, track_state=0):
     self.frame += 1
     ret, _ = feed(self.CI, self.frame,
                   self.packer.make_can_msg("STEER_RATE", 0, {"LKAS_REQUEST": request, "LKAS_EFFECTIVE": effective, "LKAS_BLOCK": blocked,
-                                                             "LKAS_TRACK_STATE": track_state, "LKAS_FAULT": fault}),
+                                                             "LKAS_TRACK_STATE": track_state}),
                   self.packer.make_can_msg("WHEEL_SPEEDS", 0, {"FL": speed_kph, "FR": speed_kph, "RL": speed_kph, "RR": speed_kph}),
                   self.packer.make_can_msg("STEER_TORQUE", 0, {"STEER_TORQUE_SENSOR": driver_torque}))
     return ret
-
-
-class TestLkasFaultBit:
-  """STEER_RATE bit 53: the EPS raises it about 0.6 s after its 0x243 stream stops and the camera's
-  ERR_BIT_1 follows 5.25 to 5.55 s later on every capture (11 of 11 with a known onset over 64 h);
-  neither clears before the next ignition cycle."""
-
-  def test_the_bit_is_decoded_but_the_camera_still_owns_the_fault(self):
-    rig = UndeliveredRig()
-    rig.step(0, 0, 1, track_state=0)
-    assert not rig.CS.lkas_fault
-    ret = rig.step(0, 0, 1, track_state=0, fault=1)
-    assert rig.CS.lkas_fault
-    assert not ret.steerFaultPermanent  # the camera's ERR_BIT_1 reports it, as before
 
 
 class TestRejectionReport:
@@ -761,32 +747,6 @@ class TestTjaButtonEvents:
     self._btns(CI, pk, 0, MODE_X=0, MODE_Y=0)
     ret = self._btns(CI, pk, 1, MODE_X=mode_x, MODE_Y=mode_y)
     assert [be.type for be in ret.buttonEvents] == [self.ButtonType.mainCruise]
-
-
-class TestStockTja:
-  """The camera's own TJA/CTS state, read live off its 0x440 for the controller's camera press:
-  0 off, 2 armed, 3 to 5 steering. Never latched (the camera drops its own arm, route 00000018
-  seg 9), and 0 once the camera goes stale."""
-
-  def step(self, CI, pk, i, tja):
-    ret, _ = feed(CI, i, pk.make_can_msg("CAM_LANEINFO", 2, {"TJA": tja, "LANE_LINES": 3}))
-    return ret
-
-  def test_follows_the_camera_frame_by_frame(self):
-    CI, pk = car_interface(alpha_long=False), packer()
-    for i, tja in enumerate([0, 2, 2, 4, 3, 0, 2, 0]):
-      self.step(CI, pk, i, tja)
-      assert CI.CS.stock_tja == tja
-
-  def test_stale_camera_reads_off(self):
-    CI, pk = car_interface(alpha_long=False), packer()
-    self.step(CI, pk, 0, 4)
-    assert CI.CS.stock_tja == 4
-    for i in range(1, CAM_LANEINFO_FRESH_FRAMES):
-      CI.update([(t_ns(i), [])])
-      assert CI.CS.stock_tja == 4
-    CI.update([(t_ns(CAM_LANEINFO_FRESH_FRAMES), [])])
-    assert CI.CS.stock_tja == 0
 
 
 class TestFirstEngageHold:
