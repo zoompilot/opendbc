@@ -74,7 +74,7 @@ def test_is_mads_white_hud_requires_the_exact_xor():
 def test_buttons_never_carry_the_tja_bit(packer):
   # never pressed by openpilot on either bus: on the car's side it toggles MADS and arms MRCC,
   # on the camera's side it switches the car's own lane-keep setting off
-  for button in (Buttons.CANCEL, Buttons.RESUME, Buttons.SET_PLUS, Buttons.SET_MINUS, Buttons.TJA):
+  for button in (Buttons.CANCEL, Buttons.RESUME, Buttons.SET_PLUS, Buttons.SET_MINUS):
     _, dat, bus = mazdacan.create_button_cmd(packer, None, 3, button)
     assert bus == 0 and not dat[1] & 0x08
 

@@ -264,11 +264,6 @@ def create_button_cmd(packer, CP, counter, button):
   dec = int(button == Buttons.SET_MINUS)
 
   values = {
-    # Never pressed by openpilot, on either bus. On the car's side it toggles MADS and arms
-    # MRCC; on the camera's side it is the car's lane-keep switch (CAM_SETTINGS
-    # LKAS_INERVENTION_ON1), and with that off the EPS applies no LKAS torque at all.
-    "TJA_BUTTON": 0,
-
     "CAN_OFF": can,
     "CAN_OFF_INV": (can + 1) % 2,
 

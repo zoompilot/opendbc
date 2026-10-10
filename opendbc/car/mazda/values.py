@@ -301,8 +301,6 @@ class Buttons:
   SET_MINUS = 2
   RESUME = 3
   CANCEL = 4
-  # The physical TJA button, sent only on the camera bus to switch the camera's own TJA/CTS off.
-  TJA = 5
 
 
 def platform_from_vin(vin: str) -> str | None:
