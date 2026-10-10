@@ -90,10 +90,10 @@ class TestCarControllerParams:
     assert params.STEER_DELTA_DOWN == 12
 
   @pytest.mark.parametrize("params, panda", [
-    (cx5_2022_params, "TestMazdaSteerToZeroEpsSafety"),
-    (eps_swap_params, "TestMazdaSteerToZeroEpsSafety"),
-    (pre_2022_params, "TestMazdaLegacyFwEpsSafety"),
-    (legacy_fw_params, "TestMazdaLegacyFwEpsSafety"),
+    (cx5_2022_params, "TestMazdaEpsSafety"),
+    (eps_swap_params, "TestMazdaEpsSafety"),
+    (pre_2022_params, "TestMazdaEpsSafety"),
+    (legacy_fw_params, "TestMazdaEpsSafety"),
   ], ids=["cx5_2022", "eps_swap", "pre_2022", "legacy_fw"])
   def test_rate_limits_equal_the_pandas_for_each_eps(self, params, panda):
     # The panda's driver_limit_check rejects any frame that retreats by less than max_rate_down

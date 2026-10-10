@@ -46,15 +46,14 @@ class CarInterface(CarInterfaceBase):
     # fingerprint on an unlisted older EPS then gets the floor and its banner, not a silent latch.
     eps_fw = {fw.fwVersion for fw in car_fw if fw.ecu == 'eps'}
     steer_to_zero = not eps_fw.isdisjoint(STEER_TO_ZERO_EPS_FW) or (not eps_fw and candidate in STEER_TO_ZERO_PLATFORMS)
+    # The panda enforces the measured envelope the controller runs on every gen1 EPS.
+    ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.EPS_HW.value
     if steer_to_zero:
-      # Select panda's matching torque envelope from the detected EPS.
       ret.flags |= MazdaFlags.STEER_TO_ZERO_EPS.value
-      ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.STEER_TO_ZERO_EPS.value
     else:
       # Same envelope and tune; only the firmware's floor, latch semantics and alpha long differ.
       ret.minSteerSpeed = LKAS_LIMITS.DISABLE_SPEED * CV.KPH_TO_MS
       ret.flags |= MazdaFlags.LEGACY_FW_EPS.value
-      ret.safetyConfigs[0].safetyParam |= MazdaSafetyFlags.LEGACY_FW_EPS.value
 
     # Alpha-long silences the radar and stands in for it, so it needs the radar's dialect,
     # not its tracks: offer it wherever the platform's radar speaks the 2022 family dialect

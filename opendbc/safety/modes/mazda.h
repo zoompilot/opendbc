@@ -30,10 +30,8 @@
 #define MAZDA_CAM  2
 
 #define MAZDA_PARAM_LONGITUDINAL 1U
-// Select the steer-to-zero EPS envelope from the firmware-derived interface flag.
-#define MAZDA_PARAM_STEER_TO_ZERO_EPS 2U
-// The same EPS hardware on firmware that keeps the 45 kph floor: the same envelope.
-#define MAZDA_PARAM_LEGACY_FW_EPS 4U
+// The measured gen1 EPS envelope; the interface sets it on every Mazda it admits.
+#define MAZDA_PARAM_EPS_HW 2U
 
 // Keep SET/RES intent fresh until PEDALS reports engagement.
 #define MAZDA_ENGAGE_BTN_WINDOW 10U
@@ -44,8 +42,7 @@
 static bool mazda_longitudinal = false;
 // Declared by the driver: the TJA button owns lateral and MRCC no longer drives the main edge.
 static bool mazda_tja_button = false;
-// The measured EPS envelope, selected by either firmware bit.
-static bool mazda_eps_envelope = false;
+static bool mazda_eps_hw = false;
 // Live cruise arming from PEDALS, both longitudinal modes (carstate mrcc_armed_raw).
 static bool mazda_acc_armed = false;
 static uint32_t mazda_engage_btn_frames = 0U;
@@ -228,7 +225,7 @@ static bool mazda_openpilot_controlling(void) {
 }
 
 static bool mazda_tx_hook(const CANPacket_t *msg) {
-  // Stock pre-2022 EPS envelope.
+  // Upstream's envelope, the no-param default.
   const TorqueSteeringLimits MAZDA_STEERING_LIMITS = {
     .max_torque = 800,
     .max_rate_up = 10,
@@ -239,10 +236,9 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
     .type = TorqueDriverLimited,
   };
 
-  // The measured EPS envelope, selected by either firmware bit: the EPS's 12-count hardware
-  // slew, with max_rate_down equal to the controller retreat rate so driver-limit winddown
-  // frames remain valid.
-  const TorqueSteeringLimits MAZDA_STEER_TO_ZERO_EPS_STEERING_LIMITS = {
+  // The measured EPS envelope: the EPS's 12-count hardware slew, with max_rate_down equal to the
+  // controller retreat rate so driver-limit winddown frames remain valid.
+  const TorqueSteeringLimits MAZDA_EPS_HW_STEERING_LIMITS = {
     .max_torque = 1200,
     .max_rate_up = 12,
     .max_rate_down = 12,
@@ -267,8 +263,8 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
     int desired_torque = (((msg->data[0] & 0x0FU) << 8) | msg->data[1]) - 2048U;
 
     const TorqueSteeringLimits *limits = &MAZDA_STEERING_LIMITS;
-    if (mazda_eps_envelope) {
-      limits = &MAZDA_STEER_TO_ZERO_EPS_STEERING_LIMITS;
+    if (mazda_eps_hw) {
+      limits = &MAZDA_EPS_HW_STEERING_LIMITS;
     }
     if (steer_torque_cmd_checks(desired_torque, -1, *limits)) {
       tx = false;
@@ -423,7 +419,7 @@ static safety_config mazda_init(uint16_t param) {
   };
 
   mazda_longitudinal = GET_FLAG(param, MAZDA_PARAM_LONGITUDINAL);
-  mazda_eps_envelope = GET_FLAG(param, MAZDA_PARAM_STEER_TO_ZERO_EPS) || GET_FLAG(param, MAZDA_PARAM_LEGACY_FW_EPS);
+  mazda_eps_hw = GET_FLAG(param, MAZDA_PARAM_EPS_HW);
   mazda_tja_button = GET_FLAG(current_safety_param_sp, MAZDA_PARAM_SP_TJA_BUTTON);
   acc_main_on = false;
 

@@ -49,12 +49,12 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
   def controller_params(cls):
     # the CarControllerParams this envelope pairs with: values.py keys it on the same EPS bit
     # interface.py hands the panda. No Mazda runs the panda's no-param envelope any more.
-    if not cls.SAFETY_PARAM & (MazdaSafetyFlags.STEER_TO_ZERO_EPS | MazdaSafetyFlags.LEGACY_FW_EPS):
+    if not cls.SAFETY_PARAM & MazdaSafetyFlags.EPS_HW:
       raise unittest.SkipTest("no controller pairs with the no-param envelope")
 
     class FakeCP:
       carFingerprint = CAR.MAZDA_CX5
-      flags = MazdaFlags.STEER_TO_ZERO_EPS if cls.SAFETY_PARAM & MazdaSafetyFlags.STEER_TO_ZERO_EPS else MazdaFlags.LEGACY_FW_EPS
+      flags = MazdaFlags.STEER_TO_ZERO_EPS
     return CarControllerParams(FakeCP())
 
   def test_controller_rate_limits_equal_the_pandas(self):
@@ -226,11 +226,11 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
       self.assertEqual(controls_allowed, self._tx(self._button_msg(resume=True)))
 
 
-class TestMazdaSteerToZeroEpsSafety(TestMazdaSafety):
-  """2022+ steer-to-zero EPS (CX-5 2022, CX-9 2021, EPS swaps): MazdaSafetyFlags.STEER_TO_ZERO_EPS
-  selects the 1200-count envelope with the EPS's own 12/12 slew."""
+class TestMazdaEpsSafety(TestMazdaSafety):
+  """Every gen1 Mazda EPS, steer-to-zero and legacy firmware alike: MazdaSafetyFlags.EPS_HW selects
+  the 1200-count envelope with the EPS's own 12/12 slew."""
 
-  SAFETY_PARAM = MazdaSafetyFlags.STEER_TO_ZERO_EPS
+  SAFETY_PARAM = MazdaSafetyFlags.EPS_HW
 
   MAX_RATE_UP = 12
   MAX_RATE_DOWN = 12
@@ -241,17 +241,20 @@ class TestMazdaSteerToZeroEpsSafety(TestMazdaSafety):
   DRIVER_TORQUE_ALLOWANCE = 15
   DRIVER_TORQUE_FACTOR = 15
 
-  def test_legacy_envelope_stays_upstreams_without_the_bit(self):
-    # the bit only ever loosens the envelope for the EPS that can take it; with it clear the
-    # legacy limits refuse the very first frame above upstream's 800 and the 12-count ramp
-    self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, 0)
-    self.safety.init_tests()
-    self.safety.set_controls_allowed(True)
-    self._reset_torque_driver_measurement(0)
-    self._set_prev_torque(0)
-    self.assertFalse(self._tx(self._torque_cmd_msg(TestMazdaSafety.MAX_RATE_UP + 1)))
-    self._set_prev_torque(800)
-    self.assertFalse(self._tx(self._torque_cmd_msg(801)))
+  def test_upstream_envelope_without_the_bit(self):
+    # with it clear upstream's limits refuse the very first frame above 800 and the 12-count ramp.
+    # 4, the retired legacy-firmware bit, selects nothing: a car side that still sends it alone
+    # gets the stricter limits, never looser ones
+    for param in (0, 4):
+      with self.subTest(param=param):
+        self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, param)
+        self.safety.init_tests()
+        self.safety.set_controls_allowed(True)
+        self._reset_torque_driver_measurement(0)
+        self._set_prev_torque(0)
+        self.assertFalse(self._tx(self._torque_cmd_msg(TestMazdaSafety.MAX_RATE_UP + 1)))
+        self._set_prev_torque(800)
+        self.assertFalse(self._tx(self._torque_cmd_msg(801)))
 
   def _controller_loop(self, cc, cs, frames, driver_seen_by_controller, report_delay=1, report=True):
     """Run the real CarController through the compiled safety model, feeding the panda's
@@ -346,37 +349,14 @@ class TestMazdaSteerToZeroEpsSafety(TestMazdaSafety):
     self.assertGreaterEqual(longest, 60, "the EPS 0x243 timeout is about 60 frames")
 
 
-class TestMazdaLegacyFwEpsSafety(TestMazdaSafety):
-  """The same EPS hardware behind firmware that keeps the 45 kph floor (stock CX-9 2021, the
-  older platforms, THACO CX-5 2023): MazdaSafetyFlags.LEGACY_FW_EPS selects the same measured
-  envelope as the steer-to-zero bit."""
-
-  SAFETY_PARAM = MazdaSafetyFlags.LEGACY_FW_EPS
-
-  MAX_RATE_UP = 12
-  MAX_RATE_DOWN = 12
-  MAX_TORQUE_LOOKUP = [0], [1200]
-
-  MAX_RT_DELTA = 384
-
-  DRIVER_TORQUE_ALLOWANCE = 15
-  DRIVER_TORQUE_FACTOR = 15
-
-  def test_legacy_bit_selects_the_steer_to_zero_envelope(self):
-    for attr in ("MAX_RATE_UP", "MAX_RATE_DOWN", "MAX_TORQUE_LOOKUP", "MAX_RT_DELTA",
-                 "DRIVER_TORQUE_ALLOWANCE", "DRIVER_TORQUE_FACTOR"):
-      self.assertEqual(getattr(self, attr), getattr(TestMazdaSteerToZeroEpsSafety, attr), attr)
-
-
-class TestMazdaLongitudinalSafety(TestMazdaSteerToZeroEpsSafety, common.LongitudinalAccelSafetyTest):
-  """openpilot longitudinal is only offered on steer-to-zero EPS platforms, so LONG always
-  travels with that bit."""
+class TestMazdaLongitudinalSafety(TestMazdaEpsSafety, common.LongitudinalAccelSafetyTest):
+  """LONG always travels with the EPS bit."""
 
   TX_MSGS = [[0x243, 0], [0x09d, 0], [0x440, 0], [0x21b, 0], [0x21c, 0], [0x499, 0],
              [0x361, 0], [0x362, 0], [0x363, 0], [0x364, 0], [0x365, 0], [0x366, 0], [0x764, 0],
              [0x21b, 2], [0x21c, 2], [0x499, 2], [0x361, 2], [0x362, 2], [0x363, 2], [0x364, 2], [0x365, 2], [0x366, 2]]
 
-  SAFETY_PARAM = MazdaSafetyFlags.LONG | MazdaSafetyFlags.STEER_TO_ZERO_EPS
+  SAFETY_PARAM = MazdaSafetyFlags.LONG | MazdaSafetyFlags.EPS_HW
 
   def setUp(self):
     self.packer = CANPackerSafety("mazda_2017")
@@ -738,7 +718,7 @@ class TestMazdaTjaMads(unittest.TestCase):
 
   def test_declared_button_under_openpilot_longitudinal(self):
     # the PEDALS-derived main edge is guarded the same way
-    self._init(tja_button=True, param=MazdaSafetyFlags.LONG | MazdaSafetyFlags.STEER_TO_ZERO_EPS)
+    self._init(tja_button=True, param=MazdaSafetyFlags.LONG | MazdaSafetyFlags.EPS_HW)
     self.safety.safety_rx_hook(self._pedals(True))
     self.assertFalse(self.safety.get_acc_main_on())
     self.safety.safety_rx_hook(self._btns(True))
@@ -841,7 +821,7 @@ class TestMazdaMrccOffCleanup(unittest.TestCase):
     self.assertFalse(self.safety.safety_tx_hook(self._mrcc_off()))
 
   def test_armed_tracks_pedals_after_teardown(self):
-    self._init(tja_button=True, param=MazdaSafetyFlags.LONG | MazdaSafetyFlags.STEER_TO_ZERO_EPS)
+    self._init(tja_button=True, param=MazdaSafetyFlags.LONG | MazdaSafetyFlags.EPS_HW)
     self.safety.safety_rx_hook(self._pedals(True))
     self.assertTrue(self.safety.safety_tx_hook(self._mrcc_off()))
     self.safety.safety_rx_hook(self._pedals(False))

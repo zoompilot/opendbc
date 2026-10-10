@@ -133,11 +133,10 @@ class TestMazdaEpsSwap:
     (CAR.MAZDA_CX5_2022, eps_fw(LEGACY_FW_EPS), False, False),
   ])
   def test_safety_param_follows_the_eps(self, candidate, car_fw, alpha_long, expected):
-    # the panda's torque envelope is selected by MazdaSafetyFlags.STEER_TO_ZERO_EPS, and it must
-    # travel with the same EPS detection that selects the controller's 1200/12/12 tune
-    bit = MazdaSafetyFlags.STEER_TO_ZERO_EPS.value
+    # the panda runs the controller's 1200/12/12 envelope on every EPS; the steer-to-zero
+    # firmware changes only the car side
     CP = car_params(candidate, car_fw=car_fw, alpha_long=alpha_long)
-    assert bool(CP.safetyConfigs[0].safetyParam & bit) == expected
+    assert CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.EPS_HW.value
     assert bool(CP.flags & MazdaFlags.STEER_TO_ZERO_EPS) == expected
     # the same proxy the controller tune keys on
     assert (CP.minSteerSpeed == 0) == expected
@@ -165,8 +164,7 @@ class TestMazdaLegacyFwEps:
     CP = car_params(CAR.MAZDA_CX5_2022, car_fw=eps_fw(LEGACY_FW_EPS))
     assert CP.flags & MazdaFlags.LEGACY_FW_EPS
     assert not CP.flags & MazdaFlags.STEER_TO_ZERO_EPS
-    assert CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.LEGACY_FW_EPS.value
-    assert not CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.STEER_TO_ZERO_EPS.value
+    assert CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.EPS_HW.value
     assert CP.minSteerSpeed == pytest.approx(MIN_STEER_SPEED_STOCK_EPS, abs=5e-8)
     assert not CP.dashcamOnly
     assert CP.steerActuatorDelay == pytest.approx(0.14, abs=5e-8)
@@ -215,14 +213,16 @@ class TestMazdaLegacyFwEps:
     CP = car_params(candidate, car_fw=car_fw)
     assert CP.flags & MazdaFlags.LEGACY_FW_EPS
     assert not CP.flags & MazdaFlags.STEER_TO_ZERO_EPS
-    assert CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.LEGACY_FW_EPS.value
+    assert CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.EPS_HW.value
     assert CP.minSteerSpeed == pytest.approx(MIN_STEER_SPEED_STOCK_EPS, abs=5e-8)
     assert CP.steerActuatorDelay == pytest.approx(0.14, abs=5e-8)
     assert not CP.dashcamOnly
 
   def test_no_mazda_is_left_on_the_upstream_envelope(self):
     for candidate in CAR:
-      assert car_params(candidate).flags & MazdaFlags.EPS_HW, candidate
+      CP = car_params(candidate)
+      assert CP.flags & MazdaFlags.EPS_HW, candidate
+      assert CP.safetyConfigs[0].safetyParam & MazdaSafetyFlags.EPS_HW.value, candidate
 
   def test_legacy_firmware_is_listed_for_the_2022_body_only(self):
     from opendbc.car.mazda.fingerprints import FW_VERSIONS

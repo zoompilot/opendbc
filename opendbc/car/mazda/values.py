@@ -159,10 +159,10 @@ class MazdaFlags(IntFlag):
 
 class MazdaSafetyFlags(IntFlag):
   LONG = 1
-  # Selects the steer-to-zero EPS envelope in panda safety.
-  STEER_TO_ZERO_EPS = 2
-  # Selects the same envelope for legacy firmware; a distinct bit so logs show the firmware.
-  LEGACY_FW_EPS = 4
+  # Selects the measured EPS envelope in panda safety; the interface sets it on every gen1 EPS.
+  # 4 was the legacy-firmware copy of this bit until 2026-10: do not reuse it, an older car side
+  # may still send it.
+  EPS_HW = 2
 
 
 class WMI(StrEnum):
