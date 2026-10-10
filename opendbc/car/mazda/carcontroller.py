@@ -354,7 +354,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
                                               session_refused=CS.radar_session_refused,
                                               stock_radar_gone=CS.stock_radar_gone,
                                               bus_healthy=bus_healthy and CS.out.canValid,
-                                              session_response=CS.radar_session_response, frame=self.frame,
+                                              frame=self.frame,
                                               stock_engaged=stock_engaged, owned=CS.radar_owned)
     # Continue synthetic radar frames through hand-back to avoid a camera-visible gap.
     radar_master = self.radar_session.replacement_active

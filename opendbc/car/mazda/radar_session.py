@@ -52,9 +52,7 @@ class RadarSessionManager:
     self.handback_completed = False
     self.handback_failed = False
     self.programming_sent = False
-    self.programming_confirmed = False
     self.default_sent = False
-    self.default_confirmed = False
     self.stock_frames = 0
     self.replacement_active = False
     self.diagnostic_message: CanData | None = None
@@ -63,14 +61,13 @@ class RadarSessionManager:
 
   def _transition(self, state: RadarSessionState, reason: str) -> None:
     if state != self.state:
-      carlog.info({"event": "mazdaRadarSession", "from": self.state, "to": state, "reason": reason,
-                   "programmingConfirmed": self.programming_confirmed, "defaultConfirmed": self.default_confirmed})
+      carlog.info({"event": "mazdaRadarSession", "from": self.state, "to": state, "reason": reason})
       self.state = state
       self.state_frames = 0
       if state == RadarSessionState.SILENCING:
-        self.programming_sent = self.programming_confirmed = False
+        self.programming_sent = False
       elif state == RadarSessionState.HANDBACK:
-        self.default_sent = self.default_confirmed = False
+        self.default_sent = False
         self.stock_frames = 0
 
   def _close_moving(self, reason: str) -> None:
@@ -89,17 +86,13 @@ class RadarSessionManager:
 
   def update(self, gate_passed: bool, stock_radar_alive: bool, handback: bool,
              standstill: bool, session_refused: bool, stock_radar_gone: bool, *,
-             bus_healthy: bool = True, session_response: int = 0, frame: int = 0,
+             bus_healthy: bool = True, frame: int = 0,
              stock_engaged: bool = False, owned: bool = False) -> RadarSessionState:
     # the controller's frame is the one clock for every cadence, the UDS schedule included
     self.frame = frame
     self.diagnostic_message = None
     self.state_frames += 1
     self.stock_frames = self.stock_frames + 1 if bus_healthy and stock_radar_alive else 0
-    if self.state == RadarSessionState.SILENCING and self.programming_sent and session_response == uds.SESSION_TYPE.PROGRAMMING:
-      self.programming_confirmed = True
-    if self.state == RadarSessionState.HANDBACK and self.default_sent and session_response == uds.SESSION_TYPE.DEFAULT:
-      self.default_confirmed = True
 
     if handback:
       if self.state in (RadarSessionState.SILENCING, RadarSessionState.SILENCED):

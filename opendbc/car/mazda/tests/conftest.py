@@ -156,7 +156,7 @@ def car_control_sp(handback=False, lead_d_rel=12.0, lead_v_rel=0.0, send_button=
 # CarState seeded without a bus
 
 def set_car_state(cs: CarState, out=None, *, body_hold=False, stock_radar_alive=False, stock_radar_gone=None,
-                  fsc_settled=True, radar_was_silenced=False, radar_session_refused=False, radar_session_response=0,
+                  fsc_settled=True, radar_was_silenced=False, radar_session_refused=False,
                   radar_bus_healthy=True, steer_undelivered=False,
                   lkas_blocked=False, lkas_effective=0, steer_first_engage_hold=False, lkas_allowed_speed=True, lkas_rejected=0,
                   crz_btns_counter=0, hbc_request=False,
@@ -180,7 +180,6 @@ def set_car_state(cs: CarState, out=None, *, body_hold=False, stock_radar_alive=
   cs.cruise_available = cs.out.cruiseState.available if cruise_available is None else cruise_available
   cs.stock_radar_seen = True
   cs.radar_bus_healthy = radar_bus_healthy
-  cs.radar_session_response = radar_session_response
   if stock_radar_gone is None:
     stock_radar_gone = not stock_radar_alive
   if stock_radar_alive:

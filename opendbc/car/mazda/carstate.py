@@ -112,7 +112,6 @@ class CarState(CarStateBase, CarStateExt):
     self.cam_laneinfo_stale_frames = CAM_LANEINFO_FRESH_FRAMES
     self.cam_empty_seen = False
     self.radar_session_refused = False
-    self.radar_session_response = 0
     self.fsc_settled_frames = 0
     # The body ECU owns the standstill brake hold.
     self.body_hold = False
@@ -306,16 +305,13 @@ class CarState(CarStateBase, CarStateExt):
         # guard on recovery instead of adopting an outage accumulated while disconnected.
         self.stock_radar_silent_frames = STOCK_RADAR_ALIVE_FRAMES
 
-      # Validate single-frame session responses; firmware-query ISO-TP fragments and
-      # unrelated service replies must not change session state.
+      # Validate single-frame session refusals; firmware-query ISO-TP fragments and unrelated
+      # service replies must not change session state.
       resp = cp.vl_all["RADAR_UDS_RESPONSE"]
       self.radar_session_refused = False
-      self.radar_session_response = 0
       for pci, sid, sub, nrc in zip(resp["PCI"], resp["SID"], resp["SUB"], resp["NRC"], strict=True):
         if pci == 3 and sid == 0x7F and sub == uds.SERVICE_TYPE.DIAGNOSTIC_SESSION_CONTROL and nrc != 0x78:
           self.radar_session_refused = True
-        elif pci == 6 and sid == 0x50 and sub in (1, 2):
-          self.radar_session_response = int(sub)  # last positive session response this frame
       # Ownership is established by the silence guard and then held on the controller's claim:
       # the radar stays in its diagnostic session through a bus blip, so recovery does not
       # re-run the guard. Stock traffic ends the claim on the alive window either way.
