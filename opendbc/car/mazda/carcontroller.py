@@ -212,11 +212,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     # PEDALS holds both cruise bits low under braking: the clock restarts there and runs
     # again once the pedal is off.
     self.mrcc_arm_wait_frames = 0 if CS.out.brakePressed else self.mrcc_arm_wait_frames + 1
-    if self.CP.openpilotLongitudinalControl:
-      filtered_armed = CS.cruise_available
-    else:
-      filtered_armed = CS.out.cruiseState.available
-    mrcc_armed = raw_armed or (filtered_armed and not raw_off_confirmed)
+    mrcc_armed = raw_armed or (CS.cruise_available and not raw_off_confirmed)
 
     if CS.tja_button and not self.tja_button_prev:
       # A press before the previous press's arm reconciled sees that arm as its own
@@ -294,14 +290,9 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     interaction fails closed, and a white wheel HUD state that became unsafe is withdrawn
     immediately, outside the cadence.
     """
-    if self.CP.openpilotLongitudinalControl:
-      filtered_available, filtered_enabled = CS.cruise_available, CS.cruise_enabled
-    else:
-      filtered_available, filtered_enabled = CS.out.cruiseState.available, CS.out.cruiseState.enabled
-
     session_ambiguous = CS.radar_handback_active or CC_SP.stockEcuHandBack
     mrcc_off = (not session_ambiguous and not CS.mrcc_armed_raw and
-                not filtered_available and not filtered_enabled)
+                not CS.cruise_available and not CS.cruise_enabled)
 
     # Every button a TJA wheel carries: TJA, MRCC, SET+/-, RES, DISTANCE, plus the
     # synthesized ICBM set presses and openpilot's own cancel/resume.

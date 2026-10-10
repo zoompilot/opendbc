@@ -91,6 +91,7 @@ class CarState(CarStateBase, CarStateExt):
     self.mrcc_button = 0
     self.crz_btns_seen = False
 
+    # The car's own cruise state in either mode; the published one adds the radar guard.
     self.cruise_available = False
     self.cruise_enabled = False
     # Unfiltered PEDALS cruise state; the filtered public state bridges brake dropouts.
@@ -106,9 +107,7 @@ class CarState(CarStateBase, CarStateExt):
     self.radar_handback_active = False
     self.radar_was_silenced = False
     self.main_off_samples = 0
-    self.cam_laneinfo_seen = False
-    self.cam_laneinfo_silent_frames = 0
-    # The camera's last CAM_LANEINFO payload and its staleness, for the white-wheel HUD gate.
+    # The camera's last CAM_LANEINFO payload and its staleness, latched by the interface.
     self.cam_laneinfo_raw: bytes | None = None
     self.cam_laneinfo_stale_frames = CAM_LANEINFO_FRESH_FRAMES
     self.cam_empty_seen = False
@@ -258,12 +257,7 @@ class CarState(CarStateBase, CarStateExt):
       self.lkas_allowed_speed = True
 
     # Require fresh CAM_LANEINFO because missing and stale parser values can appear settled.
-    if len(cp_cam.vl_all["CAM_LANEINFO"]["LANE_LINES"]) > 0:
-      self.cam_laneinfo_seen = True
-      self.cam_laneinfo_silent_frames = 0
-    else:
-      self.cam_laneinfo_silent_frames += 1
-    cam_laneinfo_fresh = self.cam_laneinfo_seen and self.cam_laneinfo_silent_frames < CAM_LANEINFO_FRESH_FRAMES
+    cam_laneinfo_fresh = self.cam_laneinfo_live
 
     # 0x21d leaves its idle 0x7f status only while the collision warning is displayed.
     if not self.cam_empty_seen:
@@ -349,8 +343,10 @@ class CarState(CarStateBase, CarStateExt):
       self.fsc_settled_frames = self.fsc_settled_frames + 1 if settled else 0
     else:
       # CRZ_AVAILABLE represents adaptive-cruise availability, not the main switch.
-      ret.cruiseState.available = cp.vl["CRZ_CTRL"]["CRZ_AVAILABLE"] == 1
-      ret.cruiseState.enabled = cp.vl["CRZ_CTRL"]["CRZ_ACTIVE"] == 1
+      self.cruise_available = cp.vl["CRZ_CTRL"]["CRZ_AVAILABLE"] == 1
+      self.cruise_enabled = cp.vl["CRZ_CTRL"]["CRZ_ACTIVE"] == 1
+      ret.cruiseState.available = self.cruise_available
+      ret.cruiseState.enabled = self.cruise_enabled
     # PEDALS.STANDSTILL means wheels stopped, not ACC hold. Reporting it under openpilot
     # longitudinal would prevent LongControl from leaving its stopping state.
     ret.cruiseState.standstill = cp.vl["PEDALS"]["STANDSTILL"] == 1 and not self.CP.openpilotLongitudinalControl

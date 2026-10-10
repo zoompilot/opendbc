@@ -107,7 +107,7 @@ class CarInterface(CarInterfaceBase):
     return ret
 
   def update(self, can_packets):
-    """Latch the camera's last CAM_LANEINFO payload and staleness for the white-wheel HUD gate."""
+    """Latch the camera's last CAM_LANEINFO payload and staleness: carstate's freshness and the white-wheel HUD gate."""
     # card sends [(t, frames), ...]; the model tests send one bare (t, frames) tuple. CANParser.update takes both.
     if can_packets and not isinstance(can_packets[0], (list, tuple)):
       can_packets = [can_packets]
