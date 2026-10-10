@@ -73,8 +73,16 @@ class TestSpeedDepConfig:
 
   def test_flagged_entry_stays_empty_behind_a_floor(self, monkeypatch):
     import opendbc.sunnypilot.car.lateral_tune as mod
-    monkeypatch.setattr(mod, 'get_speed_dep_config', lambda: {'MAZDA_CX9_2021': {'requires_steer_to_zero': True, 'speed_bp': [30.0]}})
+    entry = {'requires_steer_to_zero': True, 'speed_bp': [30.0]}
+    monkeypatch.setattr(mod, 'get_speed_dep_config', lambda: {'MAZDA_CX9_2021': entry})
     assert get_speed_dep_config_for_car(brand_cp(**STOCK_MAZDA)) == {}
+    assert get_speed_dep_config_for_car(brand_cp(brand="mazda", fingerprint="MAZDA_CX9_2021")) == entry
+
+  def test_entry_with_every_bin_below_the_floor_keeps_its_other_keys(self, monkeypatch):
+    # the car falls back to the default bins, still under the entry's seed_version
+    import opendbc.sunnypilot.car.lateral_tune as mod
+    monkeypatch.setattr(mod, 'get_speed_dep_config', lambda: {'MAZDA_CX9_2021': {'speed_bp': [10.0], 'laf_bp': [1.0], 'seed_version': 3}})
+    assert get_speed_dep_config_for_car(brand_cp(**STOCK_MAZDA)) == {'seed_version': 3}
 
   SWAP_CHASSIS = [CAR.MAZDA_CX5_KE, CAR.MAZDA_CX5, CAR.MAZDA_CX9, CAR.MAZDA_3, CAR.MAZDA_6]
 
