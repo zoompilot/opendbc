@@ -3,11 +3,11 @@ from collections import deque
 import numpy as np
 
 from opendbc.can import CANPacker
-from opendbc.car import Bus, DT_CTRL, rate_limit, structs
+from opendbc.car import Bus, DT_CTRL, structs
 from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.mazda import mazdacan
-from opendbc.car.mazda.longitudinal import BREAKAWAY_FRAMES, AdvertisedLead, StandstillHold
+from opendbc.car.mazda.longitudinal import AccelShaper, AdvertisedLead, StandstillHold
 from opendbc.car.mazda.radar_session import RadarSessionManager, RadarSessionState
 from opendbc.car.mazda.values import CarControllerParams, Buttons, MazdaFlags
 
@@ -76,9 +76,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.long_counter = 0
     self.radar_counter = 0
     self.radar_session = RadarSessionManager()
+    self.accel_shaper = AccelShaper()
     self.accel_last = 0.
-    self.release_ramp = None
-    self.breakaway_frames = 0
     self.dash_steer_warning = DashSteerWarning()
     self.dash_warning_on_bus = False
 
@@ -239,58 +238,8 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     self.lead_adv.update(CC.hudControl.leadVisible, CC_SP.leadOne.dRel,
                          CC_SP.leadOne.vRel, sm.holding)
 
-    if sm.just_released:
-      # Never-latched stops relax in one frame; latched holds ramp from the relaxed command.
-      self.release_ramp = CarControllerParams.ACCEL_HOLD_LATCHED if sm.latched_release else \
-                          CarControllerParams.ACCEL_RELEASE_BAND
-    elif sm.holding or not long_active:
-      # Re-holds and driver overrides terminate the release ramp.
-      self.release_ramp = None
-
-    accel = 0.
-    if long_active:
-      accel = float(np.clip(CC.actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX))
-      # Continue a bounded release ramp while stopped because the plan may not break static hold.
-      if self.release_ramp is None or not CS.out.standstill:
-        self.breakaway_frames = 0
-      else:
-        self.breakaway_frames += 1
-      breakaway = CS.out.standstill and self.breakaway_frames <= BREAKAWAY_FRAMES
-      # Bound breakaway by stock authority and by the plan-relative margin.
-      ramp_ceiling = max(accel, min(CarControllerParams.ACCEL_BREAKAWAY_MAX,
-                                    accel + CarControllerParams.ACCEL_BREAKAWAY_OVERSHOOT))
-      if self.release_ramp is not None and (self.release_ramp < accel or breakaway):
-        # The release ramp owns the command until it reaches the plan. Body-latched holds remain
-        # at the relaxed command until the body lets go.
-        accel = self.release_ramp
-        if not (sm.latched_release and CS.body_hold):
-          # Follow a falling plan ceiling at the winddown limit.
-          self.release_ramp = max(min(self.release_ramp + CarControllerParams.ACCEL_RELEASE_RAMP * DT_CTRL, ramp_ceiling),
-                                  self.release_ramp + CarControllerParams.ACCEL_WINDDOWN_LIMIT)
-      else:
-        self.release_ramp = None
-        # Track overrides in accel_last so control resumes through the slew limiter.
-        accel = rate_limit(accel, self.accel_last, CarControllerParams.ACCEL_WINDDOWN_LIMIT,
-                           CarControllerParams.ACCEL_WINDUP_LIMIT)
-        if accel > 0.:
-          # Shape positive commands to stock MRCC's ceiling and build rate at this speed.
-          v_ego = CS.out.vEgoRaw
-          ceiling = float(np.interp(v_ego, CarControllerParams.ACCEL_CEILING_BP, CarControllerParams.ACCEL_CEILING_V))
-          build = float(np.interp(v_ego, CarControllerParams.ACCEL_BUILD_BP, CarControllerParams.ACCEL_BUILD_V)) * DT_CTRL
-          accel = min(accel, ceiling, max(self.accel_last, 0.) + build)
-        if self.accel_last > 0. and CC.actuators.accel >= 0.:
-          # Lift the throttle at stock's rate; a brake request bypasses this above.
-          accel = max(accel, self.accel_last + CarControllerParams.ACCEL_LIFT_LIMIT * DT_CTRL)
-      if sm.car_has_hold:
-        # Stop requesting brake hold after the body ECU takes ownership.
-        accel = CarControllerParams.ACCEL_HOLD_LATCHED
-      elif sm.holding:
-        # Freeze the braking command while STOPPING is asserted.
-        accel = min(accel, 0.) if CC.actuators.accel <= 0. else min(self.accel_last, 0.)
-      if sm.resume_unlatching:
-        # Bound the latched release pulse to stock's command range.
-        accel = min(max(accel, CarControllerParams.ACCEL_HOLD_LATCHED),
-                    CarControllerParams.ACCEL_RESUME_PULSE_MAX)
+    accel = self.accel_shaper.update(long_active, CC.actuators.accel, self.accel_last, sm, CS.out.standstill,
+                                     CS.body_hold, CS.out.vEgoRaw)
     self.accel_last = accel
 
     if radar_master and self.frame % CarControllerParams.RADAR_STEP == 0:
