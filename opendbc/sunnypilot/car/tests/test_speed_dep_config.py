@@ -8,6 +8,7 @@ import pytest
 
 from opendbc.car import gen_empty_fingerprint
 from opendbc.car.mazda.interface import CarInterface
+from opendbc.car.mazda.tests.conftest import eps_fw
 from opendbc.car.mazda.values import CAR, MazdaFlags
 from opendbc.car.structs import CarParams
 from opendbc.sunnypilot.car.lateral_tune import (get_speed_dep_config, get_speed_dep_config_for_car, get_steer_rail_schedule,
@@ -23,12 +24,8 @@ def cx5_2022_cp() -> CarParams:
 
 def swapped_cp(platform=CAR.MAZDA_CX5_KE) -> CarParams:
   # a chassis behind the 2022 CX-5 EPS the seed bins were learned under (the 2016.5 KE report)
-  fw = CarParams.CarFw()
-  fw.ecu = CarParams.Ecu.eps
-  fw.address = 0x730
-  fw.subAddress = 0
-  fw.fwVersion = b'KSD5-3210X-C-00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-  cp = CarInterface.get_params(platform, gen_empty_fingerprint(), [fw], alpha_long=False, is_release=False, docs=False)
+  fw = eps_fw(b'KSD5-3210X-C-00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+  cp = CarInterface.get_params(platform, gen_empty_fingerprint(), fw, alpha_long=False, is_release=False, docs=False)
   assert cp.flags & MazdaFlags.STEER_TO_ZERO_EPS and cp.minSteerSpeed == 0.0
   return cp
 
@@ -48,12 +45,8 @@ STOCK_MAZDA = dict(brand="mazda", fingerprint="MAZDA_CX9_2021", min_steer_speed=
 
 def legacy_fw_cp() -> CarParams:
   # the 2022 EPS hardware on firmware with the 45 kph floor: hardware envelope, no steer-to-zero
-  fw = CarParams.CarFw()
-  fw.ecu = CarParams.Ecu.eps
-  fw.address = 0x730
-  fw.subAddress = 0
-  fw.fwVersion = b'K319-3210X-B-00' + b'\x00' * 9
-  cp = CarInterface.get_params(CAR.MAZDA_CX5_2022, gen_empty_fingerprint(), [fw], alpha_long=False, is_release=False, docs=False)
+  fw = eps_fw(b'K319-3210X-B-00' + b'\x00' * 9)
+  cp = CarInterface.get_params(CAR.MAZDA_CX5_2022, gen_empty_fingerprint(), fw, alpha_long=False, is_release=False, docs=False)
   assert cp.flags & MazdaFlags.LEGACY_FW_EPS and cp.minSteerSpeed > 0
   return cp
 
