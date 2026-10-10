@@ -44,8 +44,8 @@
 static bool mazda_longitudinal = false;
 // Declared by the driver: the TJA button owns lateral and MRCC no longer drives the main edge.
 static bool mazda_tja_button = false;
-static bool mazda_steer_to_zero_eps = false;
-static bool mazda_legacy_fw_eps = false;
+// The measured EPS envelope, selected by either firmware bit.
+static bool mazda_eps_envelope = false;
 // Live cruise arming from PEDALS, both longitudinal modes (carstate mrcc_armed_raw).
 static bool mazda_acc_armed = false;
 static uint32_t mazda_engage_btn_frames = 0U;
@@ -177,7 +177,6 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
       if (mazda_longitudinal) {
         // Derive cruise state from PEDALS after radar teardown.
         bool cruise_engaged = GET_BIT(msg, 3U);
-        bool acc_armed = GET_BIT(msg, 2U) || cruise_engaged;
         bool brake_free = !brake && !brake_pressed_prev;
 
         // Main mirrors carstate's cruise_available sample for sample: it follows arming and falls
@@ -185,7 +184,7 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
         // one side only steers MADS into rejected frames (route 000001c9--0b2a64a214 seg 0).
         if (mazda_tja_button) {
           // the button is the lateral switch; MRCC is cruise only
-        } else if (acc_armed) {
+        } else if (mazda_acc_armed) {
           // Main follows PEDALS arming from the first frame; the radar takeover gates cruise
           // (controls_allowed below), never main.
           acc_main_on = true;
@@ -199,7 +198,7 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
           }
         }
 
-        if (acc_armed || cruise_engaged_prev || brake_free) {
+        if (mazda_acc_armed || cruise_engaged_prev || brake_free) {
           // Require recent SET/RES intent on the engaged edge; ACC_ACTIVE alone may acknowledge
           // synthetic traffic rather than a driver request.
           if (cruise_engaged && !cruise_engaged_prev && (mazda_engage_btn_frames > 0U)) {
@@ -268,10 +267,8 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
     int desired_torque = (((msg->data[0] & 0x0FU) << 8) | msg->data[1]) - 2048U;
 
     const TorqueSteeringLimits *limits = &MAZDA_STEERING_LIMITS;
-    if (mazda_steer_to_zero_eps || mazda_legacy_fw_eps) {
+    if (mazda_eps_envelope) {
       limits = &MAZDA_STEER_TO_ZERO_EPS_STEERING_LIMITS;
-    } else {
-      // upstream's pre-2022 envelope, no longer selected by the interface
     }
     if (steer_torque_cmd_checks(desired_torque, -1, *limits)) {
       tx = false;
@@ -426,8 +423,7 @@ static safety_config mazda_init(uint16_t param) {
   };
 
   mazda_longitudinal = GET_FLAG(param, MAZDA_PARAM_LONGITUDINAL);
-  mazda_steer_to_zero_eps = GET_FLAG(param, MAZDA_PARAM_STEER_TO_ZERO_EPS);
-  mazda_legacy_fw_eps = GET_FLAG(param, MAZDA_PARAM_LEGACY_FW_EPS);
+  mazda_eps_envelope = GET_FLAG(param, MAZDA_PARAM_STEER_TO_ZERO_EPS) || GET_FLAG(param, MAZDA_PARAM_LEGACY_FW_EPS);
   mazda_tja_button = GET_FLAG(current_safety_param_sp, MAZDA_PARAM_SP_TJA_BUTTON);
   acc_main_on = false;
 
