@@ -481,20 +481,15 @@ class TestMazdaLongitudinalSafety(TestMazdaEpsSafety, common.LongitudinalAccelSa
         self.assertTrue(self._tx(msg))
 
 
-class TestMazdaTjaMads(unittest.TestCase):
-  """The physical TJA button as the MADS lateral switch, declared by the driver.
+class MazdaTjaButtonBase(unittest.TestCase):
+  """MADS on, the TJA button declared (or not) through the sunnypilot safety param."""
 
-  The button is fitted to some trims only and neither MAZDA_CX5_2022 nor MAZDA_CX9_2021
-  predicts it, so a sunnypilot safety param carries the driver's declaration. Declared, bit 11
-  drives the MADS button and MRCC no longer touches the main edge in either direction: its
-  falling edge would otherwise exit the panda's lateral while the software's MADS stays on.
-  Undeclared cars keep the MRCC-derived main edge and bit 11 is ignored.
-  """
+  TJA_BUTTON = False
 
   def setUp(self):
     self.packer = CANPackerSafety("mazda_2017")
     self.safety = libsafety_py.libsafety
-    self._init(tja_button=False)
+    self._init(tja_button=self.TJA_BUTTON)
 
   def _init(self, tja_button, param=0):
     self.safety.set_current_safety_param_sp(MazdaSafetyFlagsSP.TJA_BUTTON if tja_button else 0)
@@ -506,14 +501,25 @@ class TestMazdaTjaMads(unittest.TestCase):
     self.safety.set_current_safety_param_sp(0)
     self.safety.set_mads_params(False, False, False)
 
-  def _btns(self, tja=False):
-    return self.packer.make_can_msg_safety("CRZ_BTNS", 0, {"TJA_BUTTON": tja})
-
   def _crz_ctrl(self, main_on):
     return self.packer.make_can_msg_safety("CRZ_CTRL", 0, {"CRZ_AVAILABLE": main_on})
 
   def _pedals(self, acc_off):
     return self.packer.make_can_msg_safety("PEDALS", 0, {"ACC_OFF": acc_off})
+
+
+class TestMazdaTjaMads(MazdaTjaButtonBase):
+  """The physical TJA button as the MADS lateral switch, declared by the driver.
+
+  The button is fitted to some trims only and neither MAZDA_CX5_2022 nor MAZDA_CX9_2021
+  predicts it, so a sunnypilot safety param carries the driver's declaration. Declared, bit 11
+  drives the MADS button and MRCC no longer touches the main edge in either direction: its
+  falling edge would otherwise exit the panda's lateral while the software's MADS stays on.
+  Undeclared cars keep the MRCC-derived main edge and bit 11 is ignored.
+  """
+
+  def _btns(self, tja=False):
+    return self.packer.make_can_msg_safety("CRZ_BTNS", 0, {"TJA_BUTTON": tja})
 
   def test_undeclared_keeps_mrcc_path_and_ignores_the_bit(self):
     self.safety.safety_rx_hook(self._btns(True))
@@ -600,7 +606,7 @@ class TestMazdaIgnition(unittest.TestCase):
     self.assertFalse(self.safety.get_ignition_can())
 
 
-class TestMazdaMrccOffCleanup(unittest.TestCase):
+class TestMazdaMrccOffCleanup(MazdaTjaButtonBase):
   """The exact-bytes MRCC master tap that undoes the arm a physical TJA press causes."""
 
   # Nonzero signals only; unlisted DBC signals pack as 0 (see create_mrcc_off_cmd).
@@ -609,32 +615,12 @@ class TestMazdaMrccOffCleanup(unittest.TestCase):
     "DISTANCE_LESS_INV": 1, "DISTANCE_MORE_INV": 1, "MODE_X_INV": 1, "MODE_Y_INV": 1,
     "BIT1_INV": 1, "BIT2": 1, "BIT3": 1, "CTR": 4,
   }
-
-  def setUp(self):
-    self.packer = CANPackerSafety("mazda_2017")
-    self.safety = libsafety_py.libsafety
-    self._init(tja_button=True)
-
-  def _init(self, tja_button, param=0):
-    self.safety.set_current_safety_param_sp(MazdaSafetyFlagsSP.TJA_BUTTON if tja_button else 0)
-    self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, param)
-    self.safety.init_tests()
-    self.safety.set_mads_params(True, False, False)
-
-  def tearDown(self):
-    self.safety.set_current_safety_param_sp(0)
-    self.safety.set_mads_params(False, False, False)
+  TJA_BUTTON = True
 
   def _mrcc_off(self, **over):
     values = dict(self.MRCC_OFF_VALUES)
     values.update(over)
     return self.packer.make_can_msg_safety("CRZ_BTNS", 0, values)
-
-  def _crz_ctrl(self, armed):
-    return self.packer.make_can_msg_safety("CRZ_CTRL", 0, {"CRZ_AVAILABLE": armed})
-
-  def _pedals(self, acc_off):
-    return self.packer.make_can_msg_safety("PEDALS", 0, {"ACC_OFF": acc_off})
 
   def test_exact_tap_allowed_declared_and_armed(self):
     # not controlling: this is the whole point of the exception
