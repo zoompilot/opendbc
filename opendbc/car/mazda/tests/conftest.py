@@ -59,6 +59,7 @@ def car_fw(ecu, address: int, version: bytes) -> structs.CarParams.CarFw:
   fw.address = address
   fw.subAddress = 0
   fw.fwVersion = version
+  fw.brand = 'mazda'
   return fw
 
 
