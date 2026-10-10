@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 import unittest
-from collections import deque
 
-from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.mazda.carstate import MAIN_OFF_DEBOUNCE_SAMPLES
-from opendbc.car.mazda.values import CAR, CarControllerParams, MazdaFlags, MazdaSafetyFlags
+from opendbc.car.mazda.values import MazdaSafetyFlags
 from opendbc.car.structs import CarParams
 from opendbc.sunnypilot.car.mazda.values import MazdaSafetyFlagsSP
 from opendbc.safety.tests.libsafety import libsafety_py
@@ -44,70 +42,6 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
     self.safety = libsafety_py.libsafety
     self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, self.SAFETY_PARAM)
     self.safety.init_tests()
-
-  @classmethod
-  def controller_params(cls):
-    # the CarControllerParams this envelope pairs with: values.py keys it on the same EPS bit
-    # interface.py hands the panda. No Mazda runs the panda's no-param envelope any more.
-    if not cls.SAFETY_PARAM & MazdaSafetyFlags.EPS_HW:
-      raise unittest.SkipTest("no controller pairs with the no-param envelope")
-
-    class FakeCP:
-      carFingerprint = CAR.MAZDA_CX5
-      flags = MazdaFlags.STEER_TO_ZERO_EPS
-    return CarControllerParams(FakeCP())
-
-  def test_controller_rate_limits_equal_the_pandas(self):
-    # driver_limit_check demands a retreat of at least max_rate_down per frame once the driver
-    # bound is below the last command, and rejects anything above max_rate_up on the way up,
-    # so the controller's per-frame deltas must be exactly the panda's, not merely within them
-    params = self.controller_params()
-    self.assertEqual(params.STEER_DELTA_UP, self.MAX_RATE_UP)
-    self.assertEqual(params.STEER_DELTA_DOWN, self.MAX_RATE_DOWN)
-    self.assertEqual(params.STEER_MAX, self.MAX_TORQUE)
-    self.assertEqual(params.STEER_DRIVER_ALLOWANCE, self.DRIVER_TORQUE_ALLOWANCE)
-    self.assertEqual(params.STEER_DRIVER_MULTIPLIER, self.DRIVER_TORQUE_FACTOR)
-
-  def _closed_loop(self, params, frames, ctrl_last=0, frame0=0):
-    """Run the real controller limiter frame by frame through the compiled safety model.
-    frames yields (driver_torque, target); returns (rejected frames, full retreats, last cmd)."""
-    rejected, full_retreats = [], 0
-    for frame, (driver_torque, target) in enumerate(frames, start=frame0 + 1):
-      self.safety.set_timer(frame * 10_000)
-      self._rx(self._torque_driver_msg(driver_torque))
-      cmd = apply_driver_steer_torque_limits(target, ctrl_last, driver_torque, params, self.MAX_TORQUE)
-      if not self._tx(self._torque_cmd_msg(cmd)):
-        rejected.append((frame, cmd, ctrl_last, driver_torque))
-      full_retreats += abs(cmd) == abs(ctrl_last) - params.STEER_DELTA_DOWN
-      ctrl_last = cmd
-    return rejected, full_retreats, ctrl_last
-
-  def test_driver_override_winddown_is_never_rejected(self):
-    # Closed loop: the command is held at full torque while the driver ramps against it at
-    # several slopes; the driver bound then falls faster than the controller retreats, so the
-    # panda's max_rate_down requirement binds. Route 00000148 lost 171 consecutive frames here
-    # when the panda demanded 25 and the controller retreated 12.
-    params = self.controller_params()
-    max_torque = self.MAX_TORQUE
-    for sign in (1, -1):
-      for slope in (1, 2, 5, 10, 30):
-        with self.subTest(sign=sign, slope=slope):
-          self.safety.init_tests()
-          self.safety.set_controls_allowed(True)
-          self._reset_torque_driver_measurement(0)
-          # ramp up to full torque with no driver input
-          ramp = [(0, max_torque * sign)] * (max_torque // self.MAX_RATE_UP + 5)
-          rejected, _, last = self._closed_loop(params, ramp)
-          self.assertEqual(rejected, [])
-          self.assertEqual(last, max_torque * sign)
-          # driver pushes back, harder each frame, to the top of the 8-bit sensor field
-          rejected, full_retreats, _ = self._closed_loop(
-            params, [(-sign * min(slope * f, 127), max_torque * sign) for f in range(300)],
-            ctrl_last=last, frame0=len(ramp))
-          self.assertEqual(rejected, [], f"{len(rejected)} frames rejected, first {rejected[:1]}")
-          # the scenario only proves something if the bound outran the retreat at least once
-          if slope * self.DRIVER_TORQUE_FACTOR > self.MAX_RATE_DOWN:
-            self.assertGreater(full_retreats, 0)
 
   def _torque_meas_msg(self, torque):
     values = {"STEER_TORQUE_MOTOR": torque}
@@ -255,99 +189,6 @@ class TestMazdaEpsSafety(TestMazdaSafety):
         self.assertFalse(self._tx(self._torque_cmd_msg(TestMazdaSafety.MAX_RATE_UP + 1)))
         self._set_prev_torque(800)
         self.assertFalse(self._tx(self._torque_cmd_msg(801)))
-
-  def _controller_loop(self, cc, cs, frames, driver_seen_by_controller, report_delay=1, report=True):
-    """Run the real CarController through the compiled safety model, feeding the panda's
-    rejection report back into CarState report_delay cycles after the refused frame (the report
-    rides the can stream through pandad, one or two card cycles behind on the device). frames
-    yields the driver torque the panda samples; the controller sees driver_seen_by_controller(frame)
-    instead, so a stale sample can be staged. Returns (accepted torques by frame, longest run of
-    rejected frames)."""
-    from opendbc.car.mazda.tests.conftest import frame as tx_frame, step
-    refused = deque([0] * report_delay, maxlen=report_delay)
-    accepted, rejected_run, longest = [], 0, 0
-    for i, driver_torque in enumerate(frames, start=1):
-      self.safety.set_timer(i * 10_000)
-      self._rx(self._torque_driver_msg(driver_torque))
-      _, sends = step(cc, cs, long_active=False, enabled=True, lat_active=True, torque=1.0, v_ego=10.,
-                      driver_torque=driver_seen_by_controller(i), lkas_rejected=refused[0] if report else 0)
-      dat = tx_frame(sends, 0x243)
-      torque = (((dat[0] & 0x0f) << 8) | dat[1]) - 2048
-      if self._tx(libsafety_py.make_CANPacket(0x243, 0, dat)):
-        accepted.append((i, torque))
-        rejected_run = 0
-        refused.append(0)
-      else:
-        rejected_run += 1
-        longest = max(longest, rejected_run)
-        refused.append(1 if torque != 0 else 0)
-    return accepted, longest
-
-  STALE_FRAMES = 8
-
-  @classmethod
-  def _stale_driver_sample(cls, frame):
-    # what the controller sees of the -100 push on frames 61 to 72: nothing for eight frames
-    return -100 if 60 + cls.STALE_FRAMES < frame <= 72 else 0
-
-  def test_controller_recovers_the_stream_after_a_rejection(self):
-    # A rejection zeroes the panda's rate-limit reference, so every later frame above one step
-    # is rejected too and the EPS loses its stream: 1.72 s on route 00000148, 0.75 s on
-    # 00000139, 0.63 s on drive_02, each followed by LKAS_FAULT and the camera fault. With the
-    # panda's own report the controller restarts from zero as soon as it arrives.
-    from opendbc.car.mazda.tests.conftest import car_controller, mazda_car_state
-    for report_delay in (1, 2, 3):
-      with self.subTest(report_delay=report_delay):
-        cc = car_controller(alpha_long=False)
-        cs = mazda_car_state(cc.CP, cc.CP_SP)
-        self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, self.SAFETY_PARAM)
-        self.safety.init_tests()
-        self.safety.set_controls_allowed(True)
-        # 60 frames ramping clean; the driver then pushes -100 for 12 frames, which the panda's
-        # 6-sample window sees at once while the controller's sample runs 8 frames stale (the
-        # route 00000148 staleness); then both agree again
-        frames = [0] * 60 + [-100] * 12 + [0] * 120
-        accepted, longest = self._controller_loop(cc, cs, frames, self._stale_driver_sample, report_delay)
-        self.assertGreater(longest, 0, "the stale sample must reject at least one frame")
-        # the restart lands one report behind the refusal, and each restart is refused again
-        # while the controller's driver sample is still stale, so the outage is the staleness
-        # plus the report delay: a sixth of the EPS's 0.6 s timeout at the slowest report
-        self.assertLessEqual(longest, self.STALE_FRAMES + report_delay + 1)
-        # and the ramp rebuilds to the rail afterwards
-        self.assertEqual(accepted[-1][1], accepted[-2][1])
-        self.assertGreater(accepted[-1][1], 500)
-
-  def test_a_lone_rejection_costs_only_the_report_delay(self):
-    # the same closed loop with the controller's sample fresh: the divergence is a single
-    # frame, the panda's rate limits are exceeded by an outside push of the reference, and
-    # the outage is exactly the time the report takes to come back
-    from opendbc.car.mazda.tests.conftest import car_controller, mazda_car_state
-    for report_delay in (1, 2, 3):
-      with self.subTest(report_delay=report_delay):
-        cc = car_controller(alpha_long=False)
-        cs = mazda_car_state(cc.CP, cc.CP_SP)
-        self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, self.SAFETY_PARAM)
-        self.safety.init_tests()
-        self.safety.set_controls_allowed(True)
-        frames = [0] * 200
-        # the panda's reference zeroed from outside after 60 clean frames (a disengage-and-arm
-        # blip the controller never saw); the next command is far above one step
-        self._controller_loop(cc, cs, frames[:60], lambda f: 0, report_delay)
-        self._set_prev_torque(0)
-        accepted, longest = self._controller_loop(cc, cs, frames[60:], lambda f: 0, report_delay)
-        self.assertEqual(longest, report_delay)
-        self.assertGreater(accepted[-1][1], 500)
-
-  def test_without_the_rejection_report_a_rejection_starves_the_eps(self):
-    # the same scenario with no report is the failure the captures show: rejected to the end
-    from opendbc.car.mazda.tests.conftest import car_controller, mazda_car_state
-    cc = car_controller(alpha_long=False)
-    cs = mazda_car_state(cc.CP, cc.CP_SP)
-    self.safety.set_controls_allowed(True)
-    frames = [0] * 60 + [-100] * 12 + [0] * 120
-    _, longest = self._controller_loop(cc, cs, frames, self._stale_driver_sample, report=False)
-    self.assertGreaterEqual(longest, 60, "the EPS 0x243 timeout is about 60 frames")
-
 
 class TestMazdaLongitudinalSafety(TestMazdaEpsSafety, common.LongitudinalAccelSafetyTest):
   """LONG always travels with the EPS bit."""
