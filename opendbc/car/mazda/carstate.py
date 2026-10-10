@@ -16,9 +16,8 @@ STOCK_RADAR_GUARD_FRAMES = round(CarControllerParams.STOCK_RADAR_GUARD_T / DT_CT
 CAM_LANEINFO_FRESH_FRAMES = int(CarControllerParams.CAM_LANEINFO_FRESH_T / DT_CTRL)
 LKAS_REARM_FRAMES = round(CarControllerParams.LKAS_REARM_T / DT_CTRL)
 LKAS_REARM_FAULT_FRAMES = round(CarControllerParams.LKAS_REARM_FAULT_T / DT_CTRL)
-# Bus witnesses: independent vehicle messages whose silence says the bus is gone, not the radar.
-# Windows at the CANParser's own validity threshold, ten periods; a stricter window would revoke
-# radar ownership on a gap the parser still accepts. {message: (signal, fresh frames)}
+# Bus witnesses: vehicle messages whose silence means the bus is gone, not the radar, over the
+# CANParser's own ten-period validity window. {message: (signal, fresh frames)}
 MAIN_CAN_WITNESSES = {"PEDALS": ("ACC_ACTIVE", round(0.2 / DT_CTRL)), "ENGINE_DATA": ("SPEED", round(0.1 / DT_CTRL))}
 # EPB.HOLD_STATE once the body has taken the cruise standstill hold over.
 HOLD_STATE_HOLDING = 3
@@ -52,20 +51,16 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     self.steer_undelivered = False
     self.steer_undelivered_alert = False
     self.lkas_block_origin_speed: float | None = None
-    # The EPS's first engagement of the ignition cycle, asked for torque under standby (block
-    # and track) at a crawl, raised LKAS_FAULT 0.3 s in on three drives; it delivered nothing
-    # in that window on any start on record. Hold the request until it has delivered once,
-    # the standby lifts, or the car is rolling.
+    # The EPS's first engagement of the cycle, under standby at a crawl, can fault while delivering
+    # nothing: hold the request until it delivers once, the standby lifts or the car is rolling
+    # (docs/zoompilot/mazda-lateral.md, "The first-activation hold").
     self.lkas_delivered = False
     self.steer_first_engage_hold = False
     # Our 0x243 frames the panda refused since the last cycle, reported back on the can stream
     # with src 192 (bus 0 + 0xC0). Zero-torque refusals while disengaged are not counted.
     self.lkas_rejected = 0
-    # CAM_SETTINGS LKAS_INERVENTION_ON1: the car's own lane-keep switch, the wheel's TJA/LAS
-    # button. The EPS echoes every LKAS request but applies none of it while this is off
-    # (LKAS_EFFECTIVE 0, no LKAS_BLOCK, no fault), so it is an invalidLkasSetting like
-    # LANE_LINES 0. Seen off on a CX-5 2022 for a whole drive after the controller pressed the
-    # camera's button (7c735af5fce56485/00000105, 2026-09-12); never off on any other drive.
+    # CAM_SETTINGS intervention bits: the car's own lane-keep setting. The EPS applies nothing while
+    # it is off (docs/zoompilot/mazda-lateral.md, "The car's own lane keep switched off").
     self.lkas_setting_on = True
     # Last frame's invalidLkasSetting: with the setting off the EPS applies nothing by design,
     # so the non-delivery latch has nothing to measure and must not hold or alert.
@@ -74,9 +69,8 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     # as CarStateZP.lkasArming, which keeps lateral reading disabled to the driver meanwhile.
     self.lkas_arming = False
     self.lkas_arming_frames = 0
-    # The camera's high-beam request, 0x440 BIT2: it rises when the camera wants the lamps high
-    # (stock lamps follow within 0.2 s) and the stock radar relays it to CRZ_CTRL bit 13. Under
-    # the radar takeover the controller relays it instead.
+    # The camera's high-beam request (0x440 BIT2), relayed to CRZ_CTRL by the stock radar and, under
+    # the takeover, by the controller (docs/zoompilot/mazda-longitudinal.md, "High-beam relay").
     self.hbc_request = False
 
     self.distance_button = 0
@@ -129,11 +123,9 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     return self.radar_bus_healthy and self.stock_radar_silent_frames >= STOCK_RADAR_GUARD_FRAMES
 
   def update_lkas_arming(self, lkas_setting_invalid: bool) -> None:
-    # Armed on the setting's return (last frame's invalidLkasSetting, before the caller moves
-    # it on) until the EPS lifts its re-arm block, LKAS_REARM_T or more from the edge, or
-    # delivers torque first. A clear block sooner is only the gap before it rises (route
-    # 00000105: clear while off, set 0.02 s after the edge). Delivery alone would be a poor
-    # end: the EPS rounds requests under STEER_UNDELIVERED_MIN to nothing on a straight road.
+    # Armed on the setting's return (self.lkas_setting_invalid is still last frame's) until the EPS
+    # lifts its re-arm block LKAS_REARM_T or more from the edge, or delivers torque first
+    # (docs/zoompilot/mazda-lateral.md, "The EPS re-arms").
     if lkas_setting_invalid:
       self.lkas_arming = False
     elif self.lkas_setting_invalid:
@@ -151,11 +143,8 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     self.steer_first_engage_hold = (not self.lkas_delivered and lkas_blocked and lkas_track_state and
                                     v_ego_raw < self.params.STEER_UNDELIVERED_ALERT_ORIGIN_SPEED)
 
-    # Latch sustained zero LKAS_EFFECTIVE for a real request before the camera faults. Clear
-    # with LKAS_BLOCK because a zeroed command provides no delivery signal, and while the car's
-    # own lane-keep setting is off because non-delivery is then the expected state. Driver
-    # torque does not gate entry because torque in the requested direction does not reduce the
-    # request.
+    # Latch sustained zero LKAS_EFFECTIVE for a real request before the camera faults. It clears
+    # with LKAS_BLOCK (a zeroed command shows no delivery) and while the car's lane keep is off.
     if not lkas_blocked or self.lkas_setting_invalid:
       self.steer_undelivered_frames = 0
       self.steer_undelivered = False
@@ -172,10 +161,8 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
         self.steer_undelivered_frames = 0
 
     if self.steer_undelivered:
-      # Alert only for a sustained road-speed block that began rolling. LKAS_TRACK_STATE
-      # identifies normal low-speed standby, which can remain set briefly during a brisk
-      # launch; the origin speed catches the standby blocks it does not, the ones carried
-      # from a stop through a slow crawl until TRACK_STATE clears with the block still on.
+      # Alert only for a sustained road-speed block that began rolling: LKAS_TRACK_STATE and the
+      # origin speed both mark the EPS's standby from a stop (docs/zoompilot/mazda-lateral.md).
       self.steer_undelivered_frames += 1
       if (not self.steer_undelivered_alert and not lkas_track_state and
           self.steer_undelivered_frames >= self.params.STEER_UNDELIVERED_FRAMES + self.params.STEER_UNDELIVERED_ALERT_FRAMES and
@@ -234,8 +221,7 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     self.lkas_blocked = lkas_blocked
     self.lkas_effective = cp.vl["STEER_RATE"]["LKAS_EFFECTIVE"]
     self.lkas_track_state = cp.vl["STEER_RATE"]["LKAS_TRACK_STATE"] == 1
-    # The panda refuses every LKA frame while it is not controlling, so a refused zero-torque
-    # frame carries nothing the controller needs; count the torque requests it turned away.
+    # Count the torque requests the panda turned away; a refused zero carries nothing.
     self.lkas_rejected = sum(1 for v in can_parsers[Bus.loopback].vl_all["CAM_LKAS"]["LKAS_REQUEST"] if v != 0)
     if self.CP.flags & MazdaFlags.STEER_TO_ZERO_EPS:
       self.update_steer_undelivered(ret.vEgoRaw, cp.vl["STEER_RATE"]["LKAS_REQUEST"])
@@ -262,11 +248,9 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
                    ped["PED_WARNING"] == 1 or ped["BRAKE_WARNING"] == 1
 
     if self.CP.openpilotLongitudinalControl:
-      # After radar teardown, derive cruise state from PEDALS. Main follows arming and falls once
-      # both bits have been low for MAIN_OFF_DEBOUNCE_SAMPLES PEDALS samples, counted per sample so
-      # the panda's acc_main_on falls on the same one. Brake or no brake: every both-low run
-      # under braking in the corpus was a real main-off, by CAN_OFF, either main-button encoding,
-      # or no visible button at all.
+      # After radar teardown cruise state comes from PEDALS. Main follows arming and falls after
+      # MAIN_OFF_DEBOUNCE_SAMPLES both-low samples, brake or no brake, counted per sample so the
+      # panda's acc_main_on falls on the same one.
       pedals = cp.vl_all["PEDALS"]
       for off, active in zip(pedals["ACC_OFF"], pedals["ACC_ACTIVE"], strict=True):
         if off or active:
@@ -311,10 +295,9 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
       self.radar_was_silenced |= silenced
       self.radar_owned = silenced
 
-      # available follows PEDALS arming from the first frame (the panda's acc_main_on reads the
-      # same sample); the radar guard gates enabled only, and a live stock engagement is not
-      # adopted the instant the guard lifts: it passes through idle once first. See
-      # docs/zoompilot/mazda-longitudinal.md, "Main is the main switch".
+      # available follows PEDALS arming from the first frame; the radar guard gates enabled only,
+      # and a live stock engagement passes through idle once before it is adopted
+      # (docs/zoompilot/mazda-longitudinal.md, "Main is the main switch").
       if not silenced:
         self.cruise_enabled_blocked = True
       elif not self.cruise_enabled:
@@ -337,19 +320,15 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     # PEDALS.STANDSTILL means wheels stopped, not ACC hold. Reporting it under openpilot
     # longitudinal would prevent LongControl from leaving its stopping state.
     ret.cruiseState.standstill = cp.vl["PEDALS"]["STANDSTILL"] == 1 and not self.CP.openpilotLongitudinalControl
-    # CRZ_SPEED is the held speed on every cluster we have measured (NA imperial, metric CX-9,
-    # metric export CX-5). An Oceania cluster displays it over-read, so the dash number, which
-    # the buttons step and ICBM reads, is published separately.
+    # CRZ_SPEED is the held speed; an Oceania cluster displays it over-read, so the dash number the
+    # buttons step and ICBM reads is published separately (MazdaFlagsSP.OCEANIA_CLUSTER).
     ret.cruiseState.speed = cp.vl["CRZ_EVENTS"]["CRZ_SPEED"] * CV.KPH_TO_MS
     if self.CP_SP.flags & MazdaFlagsSP.OCEANIA_CLUSTER and ret.cruiseState.speed > 0:
       ret.cruiseState.speedCluster = (cp.vl["CRZ_EVENTS"]["CRZ_SPEED"] / 0.98 + 1.) * CV.KPH_TO_MS
 
-    # Stock LKAS must be switched on: the EPS applies no LKAS torque otherwise. LANE_LINES 0 is
-    # upstream's reading of the camera, and what the LAS switch produces on a CX-5 2022 (16 of 16
-    # edges follow a 0x9e press; never without one or without ERR_BIT in 66 h of drives). The
-    # CAM_SETTINGS intervention bits are the setting itself, which the wheel's TJA button toggles
-    # on route 00000105. Either bit set is an enabled setting, both clear is off. The setting
-    # frame is optional, so a car that never sends it reads on.
+    # Stock LKAS must be switched on: the EPS applies no LKAS torque otherwise. Off is LANE_LINES 0
+    # (the LAS switch) or both CAM_SETTINGS intervention bits clear; a car that never sends
+    # CAM_SETTINGS reads on (docs/zoompilot/mazda-lateral.md).
     if len(cp_cam.vl_all["CAM_SETTINGS"]["LKAS_INERVENTION_ON1"]) > 0:
       self.lkas_setting_on = any(cp_cam.vl["CAM_SETTINGS"][s] for s in ("LKAS_INERVENTION_ON1", "ILKAS_NTERVENTION_ON2"))
     ret.invalidLkasSetting = (cam_laneinfo_fresh and cp_cam.vl["CAM_LANEINFO"]["LANE_LINES"] == 0) or not self.lkas_setting_on
@@ -371,9 +350,8 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     else:
       # Report only sustained road-speed zero delivery after the command has been suppressed.
       ret.steerFaultTemporary = self.steer_undelivered_alert
-    # The re-arm's block is the EPS doing what it always does on the setting's return, and the
-    # driver is already told lateral is off. A soft disable over it would cost MADS its lateral
-    # on the older EPS just as it comes back. Past the window a block is a block again.
+    # The re-arm's block is expected and already shown to the driver; a soft disable over it would
+    # cost MADS its lateral on the older EPS just as it comes back.
     if self.lkas_arming and self.lkas_arming_frames < LKAS_REARM_FAULT_FRAMES:
       ret.steerFaultTemporary = False
 
@@ -403,8 +381,7 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
     # Publish CAN_OFF so ICBM does not transmit over a physical cancel press.
     self.cancel_button = btns["CAN_OFF"]
     self.resume_button = btns["RES"]
-    # The MRCC main button sets MODE_X, MODE_Y or both: MODE_Y alone is a main-on on both the
-    # KE and the 2022 CX-5 (59 of 59 logged), MODE_X alone the KE's main-off (route_ke_0b).
+    # The MRCC main button sets MODE_X, MODE_Y or both (main-on and the KE's main-off).
     self.main_button = int(btns["MODE_X"] == 1 or btns["MODE_Y"] == 1)
     MadsCarState.update_mads(self, ret, can_parsers)
 

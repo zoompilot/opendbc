@@ -8,8 +8,7 @@
 #define MAZDA_CRZ_INFO      0x21bU
 #define MAZDA_CRZ_CTRL      0x21cU
 #define MAZDA_CRZ_BTNS      0x09dU
-// Physical TJA button, DBC start bit 11 (byte 1, bit 3). Observed on a CTS-equipped gen1
-// Mazda; trims without the button hold it low for the life of a drive.
+// Physical TJA button, DBC start bit 11 (byte 1, bit 3); trims without the button hold it low.
 #define MAZDA_TJA_BUTTON_BIT 11U
 // sunnypilot safety param: the TJA button is the MADS lateral switch
 #define MAZDA_PARAM_SP_TJA_BUTTON 1U
@@ -153,23 +152,20 @@ static void mazda_rx_hook(const CANPacket_t *msg) {
 
     if (msg->addr == MAZDA_PEDALS) {
       bool brake = (msg->data[0] & 0x10U);
-      // The live MRCC arm, both longitudinal modes, from the body's own PEDALS bits: the same
-      // source and frame carstate's mrcc_armed_raw reads, so the MRCC-off exception below
-      // opens on the frame the controller first sends (the radar's CRZ_CTRL bit lags it).
+      // The live MRCC arm from the body's own PEDALS bits, the sample mrcc_armed_raw reads, so the
+      // MRCC-off exception opens on the frame the controller first sends (CRZ_CTRL lags it).
       mazda_acc_armed = GET_BIT(msg, 2U) || GET_BIT(msg, 3U);
       if (mazda_longitudinal) {
         // Derive cruise state from PEDALS after radar teardown.
         bool cruise_engaged = GET_BIT(msg, 3U);
         bool brake_free = !brake && !brake_pressed_prev;
 
-        // Main mirrors carstate's cruise_available sample for sample: it follows arming and falls
-        // after MAZDA_MAIN_OFF_DEBOUNCE both-low samples, brake or no brake. A main that falls on
-        // one side only steers MADS into rejected frames (route 000001c9--0b2a64a214 seg 0).
+        // Main mirrors carstate's cruise_available sample for sample: a main that falls on one side
+        // only steers MADS into rejected frames (docs/zoompilot/mazda-longitudinal.md).
         if (mazda_tja_button) {
           // the button is the lateral switch; MRCC is cruise only
         } else if (mazda_acc_armed) {
-          // Main follows PEDALS arming from the first frame; the radar takeover gates cruise
-          // (controls_allowed below), never main.
+          // The radar takeover gates cruise (controls_allowed below), never main.
           acc_main_on = true;
           mazda_main_off_samples = 0U;
         } else {
@@ -204,8 +200,7 @@ static bool mazda_is_lka_addr(int addr) {
 
 // The camera owns the LKAS addresses whenever openpilot is not steering. Lateral is its own
 // axis under MADS (controls_allowed_lateral); with MADS off it follows cruise. Cruise alone must
-// not claim them: under stock long that silenced the camera's own TJA/CTS with MADS off while the
-// dash showed nothing (route 00000018--5655da2c1c seg 15).
+// not claim them, or it silences the camera's own TJA/CTS while the dash shows nothing.
 static bool mazda_openpilot_controlling(void) {
   return controls_allowed_lateral || (controls_allowed && !m_mads_state.system_enabled);
 }
