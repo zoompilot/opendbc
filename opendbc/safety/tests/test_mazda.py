@@ -321,6 +321,13 @@ class TestMazdaLongitudinalSafety(TestMazdaEpsSafety, common.LongitudinalAccelSa
         for addr, dat in radar_messages.items():
           self.assertTrue(self._tx(common.make_msg(bus, addr, 8, dat)))
 
+    # the tracks carry the controller's counter in byte 7's low nibble; the static frame has none
+    self.safety.set_controls_allowed(True)
+    for addr, dat in radar_messages.items():
+      for counter in range(1, 16):
+        counted = dat[:7] + bytes([dat[7] | counter])
+        self.assertEqual(addr != 0x499, self._tx(common.make_msg(0, addr, 8, counted)), f"{addr=:#x} {counter=}")
+
   def test_g46l_radar_static_allowed(self):
     # the 2016.5 G46L body's own static capture; the 2022 one above is not its frame, and
     # the G46L never sends track messages at all

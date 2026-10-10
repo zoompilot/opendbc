@@ -57,46 +57,38 @@ static bool mazda_mrcc_off_msg_valid(const CANPacket_t *msg) {
          (msg->data[5] == 0x00U) && (msg->data[6] == 0x00U) && (msg->data[7] == 0x00U);
 }
 
-// Pin replaced-radar traffic to captured stock patterns where possible.
+// Replaced-radar frames must be one of the stock captures (mazdacan.py): every byte pinned, and on
+// the tracks only the counter nibble in byte 7 free. The 0x499 static frame has one capture per
+// radar generation; the controller picks the dialect.
+typedef struct {
+  unsigned int addr;
+  uint8_t data[8];
+  uint8_t last_byte_mask;
+} MazdaRadarCapture;
 
-// Each radar generation sends its own static capture; the controller picks the dialect (mazdacan.py)
-static bool mazda_radar_static_msg_valid(const CANPacket_t *msg) {
-  bool capture_2022 = (msg->data[0] == 0x00U) && (msg->data[1] == 0x08U) &&
-                      (msg->data[2] == 0xc0U) && (msg->data[3] == 0x00U) &&
-                      (msg->data[4] == 0x00U) && (msg->data[5] == 0x00U) &&
-                      (msg->data[6] == 0x00U) && (msg->data[7] == 0x00U);
-  bool capture_g46l = (msg->data[0] == 0x00U) && (msg->data[1] == 0x98U) &&
-                      (msg->data[2] == 0x40U) && (msg->data[3] == 0x00U) &&
-                      (msg->data[4] == 0x00U) && (msg->data[5] == 0x00U) &&
-                      (msg->data[6] == 0x00U) && (msg->data[7] == 0x00U);
-  return capture_2022 || capture_g46l;
-}
+static bool mazda_radar_capture_msg_valid(const CANPacket_t *msg) {
+  static const MazdaRadarCapture MAZDA_RADAR_CAPTURES[] = {
+    {MAZDA_RADAR_STATIC,  {0x00U, 0x08U, 0xc0U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U}, 0xffU},  // 2022 family
+    {MAZDA_RADAR_STATIC,  {0x00U, 0x98U, 0x40U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U}, 0xffU},  // G46L
+    {MAZDA_RADAR_TRACK_1, {0xffU, 0xf7U, 0xfeU, 0xfeU, 0x1fU, 0xc0U, 0x00U, 0x80U}, 0xf0U},
+    {MAZDA_RADAR_TRACK_2, {0xffU, 0xf7U, 0xfeU, 0xfeU, 0x1fU, 0xc7U, 0x8cU, 0x80U}, 0xf0U},
+    {MAZDA_RADAR_TRACK_3, {0xffU, 0xf7U, 0xfeU, 0xfeU, 0x1fU, 0xc0U, 0x00U, 0x00U}, 0xf0U},
+    {MAZDA_RADAR_TRACK_4, {0xffU, 0xf7U, 0xfeU, 0xfeU, 0x1fU, 0xc0U, 0x00U, 0x00U}, 0xf0U},
+    {MAZDA_RADAR_TRACK_5, {0xffU, 0xf7U, 0xfeU, 0x7fU, 0xfbU, 0xffU, 0x3fU, 0xc0U}, 0xf0U},
+    {MAZDA_RADAR_TRACK_6, {0xffU, 0xf7U, 0xfeU, 0x7fU, 0xfbU, 0xffU, 0x3fU, 0xc0U}, 0xf0U},
+  };
 
-static bool mazda_empty_radar_track_msg_valid(const CANPacket_t *msg) {
   bool valid = false;
 
-  if ((msg->addr == MAZDA_RADAR_TRACK_1) || (msg->addr == MAZDA_RADAR_TRACK_2) ||
-      (msg->addr == MAZDA_RADAR_TRACK_3) || (msg->addr == MAZDA_RADAR_TRACK_4)) {
-    valid = (msg->data[0] == 0xffU) && (msg->data[1] == 0xf7U) &&
-            (msg->data[2] == 0xfeU) && (msg->data[3] == 0xfeU) &&
-            (msg->data[4] == 0x1fU);
-
-    if (msg->addr == MAZDA_RADAR_TRACK_2) {
-      valid = valid && (msg->data[5] == 0xc7U) && (msg->data[6] == 0x8cU) &&
-              ((msg->data[7] & 0xf0U) == 0x80U);
-    } else if ((msg->addr == MAZDA_RADAR_TRACK_3) || (msg->addr == MAZDA_RADAR_TRACK_4)) {
-      valid = valid && (msg->data[5] == 0xc0U) && (msg->data[6] == 0x00U) &&
-              ((msg->data[7] & 0xf0U) == 0x00U);
-    } else {
-      valid = valid && (msg->data[5] == 0xc0U) && (msg->data[6] == 0x00U) &&
-              ((msg->data[7] & 0xf0U) == 0x80U);
+  for (unsigned int i = 0U; i < (sizeof(MAZDA_RADAR_CAPTURES) / sizeof(MazdaRadarCapture)); i++) {
+    const MazdaRadarCapture *capture = &MAZDA_RADAR_CAPTURES[i];
+    if (capture->addr == msg->addr) {
+      bool match = (msg->data[7] & capture->last_byte_mask) == capture->data[7];
+      for (int j = 0; j < 7; j++) {
+        match = match && (msg->data[j] == capture->data[j]);
+      }
+      valid = valid || match;
     }
-  } else if ((msg->addr == MAZDA_RADAR_TRACK_5) || (msg->addr == MAZDA_RADAR_TRACK_6)) {
-    valid = (msg->data[0] == 0xffU) && (msg->data[1] == 0xf7U) &&
-            (msg->data[2] == 0xfeU) && (msg->data[3] == 0x7fU) &&
-            (msg->data[4] == 0xfbU) && (msg->data[5] == 0xffU) &&
-            (msg->data[6] == 0x3fU) && ((msg->data[7] & 0xf0U) == 0xc0U);
-  } else {
   }
 
   return valid;
@@ -108,12 +100,6 @@ static bool mazda_synthetic_lead_radar_track_msg_valid(const CANPacket_t *msg) {
          ((msg->data[1] & 0x0fU) == 0x0eU) && (msg->data[2] == 0x00U) &&
          ((msg->data[4] & 0x1fU) == 0x1cU) && (msg->data[5] == 0x00U) &&
          (msg->data[6] == 0x00U) && ((msg->data[7] & 0xf0U) == 0x00U);
-}
-
-static bool mazda_radar_track_msg_valid(const CANPacket_t *msg) {
-  // Occupied tracks represent perception and remain valid while controls are disengaged.
-  return mazda_empty_radar_track_msg_valid(msg) ||
-         mazda_synthetic_lead_radar_track_msg_valid(msg);
 }
 
 // track msgs coming from OP so that we know what CAM msgs to drop and what to forward
@@ -307,14 +293,10 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
     }
   }
 
-  if (mazda_longitudinal && long_replacement_bus && (msg->addr == MAZDA_RADAR_STATIC)) {
-    if (!mazda_radar_static_msg_valid(msg)) {
-      tx = false;
-    }
-  }
-
-  if (mazda_longitudinal && long_replacement_bus && (msg->addr >= MAZDA_RADAR_TRACK_1) && (msg->addr <= MAZDA_RADAR_TRACK_6)) {
-    if (!mazda_radar_track_msg_valid(msg)) {
+  bool radar_frame = (msg->addr == MAZDA_RADAR_STATIC) || ((msg->addr >= MAZDA_RADAR_TRACK_1) && (msg->addr <= MAZDA_RADAR_TRACK_6));
+  if (mazda_longitudinal && long_replacement_bus && radar_frame) {
+    // Occupied tracks represent perception and remain valid while controls are disengaged.
+    if (!mazda_radar_capture_msg_valid(msg) && !mazda_synthetic_lead_radar_track_msg_valid(msg)) {
       tx = false;
     }
   }
