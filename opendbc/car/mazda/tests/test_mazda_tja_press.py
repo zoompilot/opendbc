@@ -160,12 +160,13 @@ class TestMrccUndo:
 class TestMrccUndoShipsDark:
 
   def test_radar_handback_aborts_with_the_budget_frozen(self):
-    # under alpha-long the session manager owns radar_handback_active and overwrites a
-    # seeded flag, so the abort runs on a stock-long controller
+    # under alpha long the radar session recomputes handback_active every frame, so the abort
+    # runs on a stock-long controller, whose session never updates
     cc, cs, _ = undo_episode(alpha_long=False)
     drive(cc, cs, 3, available=True, mrcc_armed_raw=True)  # episode live, at most one frame out
     spent = cc.mrcc_undo_frames
-    sends = drive(cc, cs, 30, available=True, mrcc_armed_raw=True, radar_handback_active=True)
+    cc.radar_session.handback_active = True
+    sends = drive(cc, cs, 30, available=True, mrcc_armed_raw=True)
     assert not cc.mrcc_undo_pending
     assert cc.mrcc_undo_frames == spent  # aborted, not budget-exhausted
     assert mrcc_off_frames(sends) == []

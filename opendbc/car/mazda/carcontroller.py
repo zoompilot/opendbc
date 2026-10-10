@@ -238,7 +238,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     # stock ECU ownership changes who owns the arm.
     driver_activity = (CS.cancel_button or CS.resume_button or CS.accel_button or CS.decel_button or
                        CS.mrcc_button or CS.distance_button)
-    if driver_activity or CS.radar_handback_active or CC_SP.stockEcuHandBack:
+    if driver_activity or self.radar_session.handback_active or CC_SP.stockEcuHandBack:
       self.mrcc_undo_pending = False
       return can_sends
 
@@ -286,7 +286,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     interaction fails closed, and a white wheel HUD state that became unsafe is withdrawn
     immediately, outside the cadence.
     """
-    session_ambiguous = CS.radar_handback_active or CC_SP.stockEcuHandBack
+    session_ambiguous = self.radar_session.handback_active or CC_SP.stockEcuHandBack
     mrcc_off = (not session_ambiguous and not CS.mrcc_armed_raw and
                 not CS.cruise_available and not CS.cruise_enabled)
 
@@ -358,16 +358,13 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
                                               stock_engaged=stock_engaged, owned=CS.radar_owned)
     # Continue synthetic radar frames through hand-back to avoid a camera-visible gap.
     radar_master = self.radar_session.replacement_active
-    CS.radar_control_active = radar_master and session_state == RadarSessionState.SILENCED
-    CS.radar_restore_failed = self.radar_session.handback_failed
-    CS.radar_handback_active = session_state == RadarSessionState.HANDBACK or self.radar_session.handback_completed
 
     if self.radar_session.diagnostic_message is not None:
       can_sends.append(self.radar_session.diagnostic_message)
 
     stopping = CC.actuators.longControlState == LongCtrlState.stopping
     # Engaged bits follow CC.enabled. Gas is an override, not a disengagement.
-    control_ready = CS.radar_control_active and bus_healthy and CS.out.canValid
+    control_ready = self.radar_session.control_active and bus_healthy and CS.out.canValid
     long_engaged = CC.enabled and control_ready
     long_active = CC.longActive and control_ready
     sm = self.stop_and_go

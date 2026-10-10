@@ -13,7 +13,7 @@ from opendbc.car import DT_CTRL
 from opendbc.car.mazda.radar_session import RADAR_SESSION_LIMIT_FRAMES, RADAR_RESTORE_FRAMES, RADAR_UDS_STEP, RadarSessionManager, \
   RadarSessionState
 from opendbc.car.mazda.tests.conftest import (CRZ_CTRL, CRZ_INFO, RADAR_STATIC, RADAR_UDS, SESSION_DFLT_DAT, SESSION_PROG_DAT,
-                                              TESTER_PRESENT_DAT, LongCtrlState, frames, step_long)
+                                              TESTER_PRESENT_DAT, LongCtrlState, car_interface, frames, step_long)
 from opendbc.car.mazda.values import CarControllerParams
 from opendbc.sunnypilot.car.stock_ecu import StockEcuState
 
@@ -367,6 +367,11 @@ class TestControllerStatus:
 
   def test_stock_long_controller_needs_nothing(self, stock_cc):
     assert stock_cc.stock_ecu_state == StockEcuState.NOT_NEEDED
+
+  def test_carstate_reads_the_controllers_session(self):
+    # one session, run by the controller: carstate never keeps a copy of its own
+    CI = car_interface()
+    assert CI.CS.radar_session is CI.CC.radar_session
 
   def test_ready_follows_carstate_guard(self, cc, cs):
     boot_step(cc, cs, stock_radar_alive=False, fsc_settled=True)

@@ -2,6 +2,7 @@ from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, DT_CTRL, create_button_events, structs, uds
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
+from opendbc.car.mazda.radar_session import RadarSessionManager
 from opendbc.car.mazda.values import DBC, LKAS_LIMITS, CarControllerParams, MazdaFlags
 from opendbc.sunnypilot.car.mazda.carstate_ext import CarStateExt
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
@@ -101,10 +102,9 @@ class CarState(CarStateBase, CarStateExt):
     self.stock_radar_seen = False
     self.main_can_silent_frames = {name: fresh for name, (_, fresh) in MAIN_CAN_WITNESSES.items()}
     self.radar_bus_healthy = False
-    self.radar_control_active = False  # controller owns replacement traffic, read on the next update
+    # The controller's radar session, shared by CarInterface: read where the last control frame left it.
+    self.radar_session = RadarSessionManager()
     self.radar_owned = False  # the silence guard passed on an owned radar: the engagement gate below
-    self.radar_restore_failed = False
-    self.radar_handback_active = False
     self.radar_was_silenced = False
     self.main_off_samples = 0
     # The camera's last CAM_LANEINFO payload and its staleness, latched by the interface.
@@ -315,8 +315,9 @@ class CarState(CarStateBase, CarStateExt):
       # Ownership is established by the silence guard and then held on the controller's claim:
       # the radar stays in its diagnostic session through a bus blip, so recovery does not
       # re-run the guard. Stock traffic ends the claim on the alive window either way.
-      silenced = self.radar_control_active and not self.stock_radar_alive and (self.stock_radar_gone or self.radar_was_silenced)
-      ret.accFaulted = self.radar_restore_failed or (self.radar_was_silenced and self.stock_radar_alive and not self.radar_handback_active)
+      session = self.radar_session
+      silenced = session.control_active and not self.stock_radar_alive and (self.stock_radar_gone or self.radar_was_silenced)
+      ret.accFaulted = session.handback_failed or (self.radar_was_silenced and self.stock_radar_alive and not session.handback_active)
       self.radar_was_silenced |= silenced
       self.radar_owned = silenced
 

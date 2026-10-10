@@ -100,10 +100,11 @@ class TestWhiteWheelGate:
     assert not any(is_white(d) for _, d in hud), deny
 
   def test_radar_handback_blocks_the_white_state(self):
-    # under alpha-long the session manager owns radar_handback_active and overwrites a
-    # seeded flag, so the deny is exercised on a stock-long controller
+    # under alpha long the radar session recomputes handback_active every frame, so the deny
+    # is exercised on a stock-long controller, whose session never updates
     cc, cs = tja_controller(alpha_long=False)
-    hud, _ = drive(cc, cs, 2 * CADENCE + 5, **self.kwargs(radar_handback_active=True))
+    cc.radar_session.handback_active = True
+    hud, _ = drive(cc, cs, 2 * CADENCE + 5, **self.kwargs())
     assert not any(is_white(d) for _, d in hud)
 
   def test_unsafe_state_is_withdrawn_immediately(self):

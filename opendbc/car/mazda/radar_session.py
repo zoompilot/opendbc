@@ -39,6 +39,9 @@ class RadarSessionManager:
   An ordered hand-back (the lifecycle's request) keeps the radar stock for as long as the
   request stands; a withdrawn request is a fresh start under the normal takeover gate.
   Undoing our own unanswered or refused request latches nothing.
+
+  The controller runs it; carstate reads control_active, handback_active and handback_failed
+  on its next update, through the same object (CarInterface shares it) and never writes it.
   """
 
   def __init__(self):
@@ -53,6 +56,9 @@ class RadarSessionManager:
     self.replacement_active = False
     self.diagnostic_message: CanData | None = None
     self.status = StockEcuState.STARTING
+    # our replacement traffic is the radar, and the ordered hand-back is under way or done
+    self.control_active = False
+    self.handback_active = False
 
   def _transition(self, state: RadarSessionState, reason: str) -> None:
     if state != self.state:
@@ -142,6 +148,8 @@ class RadarSessionManager:
         self.diagnostic_message = make_tester_present_msg(RADAR_ADDR, RADAR_BUS, suppress_response=True)
 
     self._update_replacement(stock_radar_alive, bus_healthy, stock_radar_gone)
+    self.control_active = self.replacement_active and self.state == RadarSessionState.SILENCED
+    self.handback_active = self.state == RadarSessionState.HANDBACK or self.handback_completed
     self._update_status(gate_passed, stock_engaged, standstill, owned)
     return self.state
 

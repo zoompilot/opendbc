@@ -219,7 +219,7 @@ def feed_guard(CI, secs, radar_alive, start_frame=0, acc_active=False):
   pk = packer()
   ret = None
   n = int(secs / DT_CTRL)
-  CI.CS.radar_control_active = not radar_alive  # ownership supplied by the controller in production
+  CI.CC.radar_session.control_active = not radar_alive  # the controller's claim, from its session in production
   for i in range(start_frame, start_frame + n):
     msgs = [pk.make_can_msg("PEDALS", 0, {"ACC_OFF": 0 if acc_active else 1, "ACC_ACTIVE": 1 if acc_active else 0})]
     msgs.append(pk.make_can_msg("ENGINE_DATA", 0, {"SPEED": 0}))
@@ -405,7 +405,7 @@ class TestMainOffDebounce:
   def armed_and_silent(CI):
     # get past the two-master guard with the main armed so availability starts True
     pk = packer()
-    CI.CS.radar_control_active = True
+    CI.CC.radar_session.control_active = True
     n = int((GUARD_T + 0.5) / DT_CTRL)
     for i in range(n):
       ret, _ = feed(CI, i, pk.make_can_msg("PEDALS", 0, {"ACC_OFF": 1}), pk.make_can_msg("ENGINE_DATA", 0, {"SPEED": 0}))

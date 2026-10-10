@@ -17,6 +17,11 @@ class CarInterface(CarInterfaceBase):
   CarController = CarController
   RadarInterface = RadarInterface
 
+  def __init__(self, CP, CP_SP):
+    CarInterfaceBase.__init__(self, CP, CP_SP)
+    # The controller runs the radar session; carstate reads its outcome on the next update.
+    self.CS.radar_session = self.CC.radar_session
+
   @staticmethod
   def configure_torque_tune(candidate, tune, steering_angle_deadzone_deg=0.0):
     # params.toml's tunes are on upstream's STEER_MAX. An override rather than a conversion in
