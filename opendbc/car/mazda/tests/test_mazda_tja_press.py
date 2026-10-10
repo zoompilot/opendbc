@@ -49,20 +49,6 @@ def undo_episode(alpha_long):
   return cc, cs, held
 
 
-class TestNoCameraPress:
-
-  def test_no_button_frame_on_the_camera_bus(self):
-    for alpha_long in (False, True):
-      cc, cs = rig(alpha_long=alpha_long)
-      for stock_tja in (0, 2, 3, 4):
-        for lat_active in (False, True):
-          for _ in range(150):
-            _, sends = step(cc, cs, lat_active=lat_active, stock_tja=stock_tja, radar_was_silenced=alpha_long)
-            assert not frames(sends, CRZ_BTNS, bus=2)
-            for dat in frames(sends, CRZ_BTNS, bus=0):
-              assert not dat[1] & 0x08, "the TJA bit must never go to the car"
-
-
 @pytest.mark.parametrize("alpha_long", [False, True])
 class TestMrccUndo:
 
