@@ -79,7 +79,7 @@ class TestRadarSessionBounds:
     assert m.status == StockEcuState.RESTORED
 
   def test_withdrawn_request_after_the_restore_is_a_fresh_start(self):
-    # forced offroad cancelled once the radar was handed back: the next takeover is a first one
+    # forced offroad canceled once the radar was handed back: the next takeover is a first one
     m = RadarSessionManager()
     m.update(True, False, False, standstill=True, session_refused=False, stock_radar_gone=True)
     m.update(True, False, True, standstill=True, session_refused=False, stock_radar_gone=True)

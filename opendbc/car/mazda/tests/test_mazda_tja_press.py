@@ -91,7 +91,7 @@ class TestMrccUndo:
     assert len(mrcc_off_frames(released)) == 1
     again = drive(cc, cs, HOLD_CYCLES, available=True, mrcc_armed_raw=True, tja_button=1)  # second press
     assert mrcc_off_frames(again) == []  # nothing while held
-    assert cc.mrcc_undo_pending  # not cancelled by the second edge
+    assert cc.mrcc_undo_pending  # not canceled by the second edge
     after = drive(cc, cs, 40, available=True, mrcc_armed_raw=True)
     assert 0 < len(mrcc_off_frames(after)) <= 3  # the budget returned and undoes the second arm
 
