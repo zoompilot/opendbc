@@ -35,8 +35,8 @@
 
 // Keep SET/RES intent fresh until PEDALS reports engagement.
 #define MAZDA_ENGAGE_BTN_WINDOW 10U
-// Both PEDALS cruise bits low for this many samples is a main-off: carstate's
-// MAIN_OFF_DEBOUNCE_T on the PEDALS clock (100 Hz on the bus).
+// Both PEDALS cruise bits low for this many samples is a main-off: values'
+// MAIN_OFF_DEBOUNCE_SAMPLES, which carstate counts the same way.
 #define MAZDA_MAIN_OFF_DEBOUNCE 10U
 
 static bool mazda_longitudinal = false;

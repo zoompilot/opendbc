@@ -22,6 +22,12 @@ class CarControllerParams:
 
   # The measured envelope's full scale, equal to the panda's max_torque for it.
   EPS_STEER_MAX = 1200  # theoretical max_steer 2047
+  # The EPS's hardware slew in both directions and the driver weighting tuned to its response.
+  # With EPS_STEER_MAX and STEER_DRIVER_ALLOWANCE this is mazda.h's MAZDA_EPS_HW_STEERING_LIMITS;
+  # the panda's safety tests take their numbers from here.
+  STEER_DELTA_UP = 12
+  STEER_DELTA_DOWN = 12
+  STEER_DRIVER_MULTIPLIER = 15
   # Upstream's STEER_MAX: the scale params.toml's Mazda tunes, sunnypilot's NNLC models and the
   # manual torque override are expressed on. Every steering Mazda runs the envelope, so one
   # ratio converts them (latAccelFactor x TUNE_SCALE, friction / TUNE_SCALE).
@@ -51,7 +57,9 @@ class CarControllerParams:
   LKAS_REARM_T = 3.0           # no lift of the block counts before this
   LKAS_REARM_FAULT_T = 4.0     # the block it raises is not a fault for this long
 
-  MAIN_OFF_DEBOUNCE_T = 0.1   # both PEDALS cruise bits low this long is a main-off; no transient dropout in 4026 segments
+  # Both PEDALS cruise bits low for this many samples (PEDALS is 100 Hz) is a main-off; no transient
+  # dropout in 4026 segments. mazda.h's MAZDA_MAIN_OFF_DEBOUNCE counts the same.
+  MAIN_OFF_DEBOUNCE_SAMPLES = 10
   CANCEL_SETTLE_T = 0.2       # s a cancel request must hold before the first press; the car answers its own inside it
 
   # Relax the command after the body ECU takes ownership of the brake hold.
@@ -89,11 +97,6 @@ class CarControllerParams:
   ACCEL_WINDDOWN_LIMIT = -10.0 * DT_CTRL  # m/s2 per frame, clips only the p99.9+ steps
 
   def __init__(self, CP):
-    # Every gen1 Mazda EPS runs the measured envelope: its hardware slew and the panda's limits in
-    # both directions.
-    self.STEER_DELTA_UP = 12
-    self.STEER_DELTA_DOWN = 12
-    self.STEER_DRIVER_MULTIPLIER = 15   # tuned for the CX-5 EPS response
     # Use a sample window and margin to stay inside panda's fresher driver-torque envelope.
     self.STEER_DRIVER_SAMPLES = 10
     self.STEER_DRIVER_MARGIN = 2

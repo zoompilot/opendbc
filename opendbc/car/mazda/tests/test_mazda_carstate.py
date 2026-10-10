@@ -14,9 +14,11 @@ from opendbc.car import Bus, DT_CTRL
 from opendbc.car import structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.mazda import mazdacan
-from opendbc.car.mazda.carstate import ButtonType, LKAS_REARM_FRAMES, LKAS_REARM_FAULT_FRAMES, MAIN_OFF_DEBOUNCE_SAMPLES
+from opendbc.car.mazda.carstate import ButtonType, LKAS_REARM_FRAMES, LKAS_REARM_FAULT_FRAMES
 from opendbc.car.mazda.tests.conftest import car_interface, car_params, car_params_sp, packer
 from opendbc.car.mazda.values import CAR, CarControllerParams
+
+MAIN_OFF_DEBOUNCE_SAMPLES = CarControllerParams.MAIN_OFF_DEBOUNCE_SAMPLES
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 
 CAM_LANEINFO = 0x440
@@ -395,7 +397,7 @@ class TestNavSpeedLimit:
 
 class TestMainOffDebounce:
   """Under alpha long, main is PEDALS arming, debounced off: both bits low for
-  MAIN_OFF_DEBOUNCE_T of samples is a main-off, brake or no brake. It replaces a brake-hold that
+  MAIN_OFF_DEBOUNCE_SAMPLES samples is a main-off, brake or no brake. It replaces a brake-hold that
   let a both-low run under braking land only inside a button's context, which missed a cancel
   mashed under braking (route 7f9e3ff336 t+484-488), the KE's MODE_X main-off at a stop
   (route_ke_0b seg 3), and a main-off with no visible button (000001f0--b507914e9e seg 0 t+10.69).

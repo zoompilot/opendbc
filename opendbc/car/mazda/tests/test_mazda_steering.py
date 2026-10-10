@@ -8,12 +8,12 @@ Steering on the 2022+ EPS: the torque parameters (gated on the EPS, not the mode
 EPS ceiling and rail, the driver-torque headroom against the panda's window, and the
 non-delivery latch's zeroing of the command.
 """
-import importlib
 from collections import deque
 
 import numpy as np
 import pytest
 
+from opendbc.can import CANPacker
 from opendbc.car import DT_CTRL
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.lateral import apply_driver_steer_torque_limits
@@ -21,11 +21,11 @@ from opendbc.car.mazda.tests.conftest import CAM_LKAS, LongCtrlState, car_contro
   mazda_car_state, step
 from opendbc.car.mazda.values import CAR, CarControllerParams, MazdaSafetyFlags
 from opendbc.car.structs import CarParams
-from opendbc.safety.tests.common import MAX_SAMPLE_VALS, CANPackerSafety
 from opendbc.safety.tests.libsafety import libsafety_py
 
 SWAPPED_EPS_FW = eps_fw(b'KSD5-3210X-C-00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 LEGACY_FW_EPS = eps_fw(b'K319-3210X-B-00' + b'\x00' * 9)  # THACO CX-5 2023, keeps the floor
+PANDA_DRIVER_SAMPLES = 6  # the panda's driver-torque window, MAX_SAMPLE_VALS in safety/declarations.h
 
 
 class Panda:
@@ -34,22 +34,26 @@ class Panda:
 
   def __init__(self):
     self.safety = libsafety_py.libsafety
-    self.packer = CANPackerSafety("mazda_2017")
+    self.packer = CANPacker("mazda_2017")
     self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, MazdaSafetyFlags.EPS_HW)
     self.safety.init_tests()
     self.safety.set_controls_allowed(True)
-    for _ in range(MAX_SAMPLE_VALS):
+    for _ in range(PANDA_DRIVER_SAMPLES):
       self.driver(0, 0)
+
+  def packet(self, name: str, values: dict):
+    addr, dat, bus = self.packer.make_can_msg(name, 0, values)
+    return libsafety_py.make_CANPacket(addr, bus, dat)
 
   def driver(self, frame_idx: int, torque: float) -> None:
     self.safety.set_timer(frame_idx * 10_000)
-    self.safety.safety_rx_hook(self.packer.make_can_msg_safety("STEER_TORQUE", 0, {"STEER_TORQUE_SENSOR": torque}))
+    self.safety.safety_rx_hook(self.packet("STEER_TORQUE", {"STEER_TORQUE_SENSOR": torque}))
 
   def tx(self, dat: bytes) -> bool:
     return self.safety.safety_tx_hook(libsafety_py.make_CANPacket(CAM_LKAS, 0, dat))
 
   def tx_torque(self, torque: int) -> bool:
-    return self.safety.safety_tx_hook(self.packer.make_can_msg_safety("CAM_LKAS", 0, {"LKAS_REQUEST": torque}))
+    return self.safety.safety_tx_hook(self.packet("CAM_LKAS", {"LKAS_REQUEST": torque}))
 
   def zero_reference(self) -> None:
     self.safety.set_desired_torque_last(0)
@@ -111,26 +115,22 @@ class TestCarControllerParams:
     assert params.STEER_DELTA_UP == 12
     assert params.STEER_DELTA_DOWN == 12
 
-  @pytest.mark.parametrize("params, panda", [
-    (cx5_2022_params, "TestMazdaEpsSafety"),
-    (eps_swap_params, "TestMazdaEpsSafety"),
-    (pre_2022_params, "TestMazdaEpsSafety"),
-    (legacy_fw_params, "TestMazdaEpsSafety"),
-  ], ids=["cx5_2022", "eps_swap", "pre_2022", "legacy_fw"])
-  def test_rate_limits_equal_the_pandas_for_each_eps(self, params, panda):
+  @pytest.mark.parametrize("params", [cx5_2022_params, eps_swap_params, pre_2022_params, legacy_fw_params],
+                           ids=["cx5_2022", "eps_swap", "pre_2022", "legacy_fw"])
+  def test_rate_limits_equal_the_pandas_for_each_eps(self, params):
     # The panda's driver_limit_check rejects any frame that retreats by less than max_rate_down
     # once the driver bound is below the last command, and any frame that climbs by more than
     # max_rate_up, so "tighter than the panda" is not allowed: the controller's deltas must
     # equal the panda's for the EPS class it is driving. Route 00000148 lost 171 consecutive
-    # frames to a 12-count retreat against a 25-count requirement. The safety test classes
-    # carry the panda numbers and are themselves proven against the compiled safety model.
+    # frames to a 12-count retreat against a 25-count requirement. The panda's safety tests
+    # (TestMazdaEpsSafety) take their envelope from CarControllerParams and prove it against the
+    # compiled safety model, so every EPS must run exactly those constants.
     params = params()
-    panda = getattr(importlib.import_module("opendbc.safety.tests.test_mazda"), panda)
-    assert params.STEER_DELTA_UP == panda.MAX_RATE_UP
-    assert params.STEER_DELTA_DOWN == panda.MAX_RATE_DOWN
-    assert params.STEER_MAX == max(panda.MAX_TORQUE_LOOKUP[1])
-    assert params.STEER_DRIVER_MULTIPLIER == panda.DRIVER_TORQUE_FACTOR
-    assert params.STEER_DRIVER_ALLOWANCE == panda.DRIVER_TORQUE_ALLOWANCE
+    assert params.STEER_DELTA_UP == CarControllerParams.STEER_DELTA_UP
+    assert params.STEER_DELTA_DOWN == CarControllerParams.STEER_DELTA_DOWN
+    assert params.STEER_MAX == CarControllerParams.EPS_STEER_MAX
+    assert params.STEER_DRIVER_MULTIPLIER == CarControllerParams.STEER_DRIVER_MULTIPLIER
+    assert params.STEER_DRIVER_ALLOWANCE == CarControllerParams.STEER_DRIVER_ALLOWANCE
 
   def test_cx5_eps_driver_multiplier(self):
     # 15 is the CX-5-EPS tune (upstream stock is 1)

@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 import unittest
 
-from opendbc.car.mazda.carstate import MAIN_OFF_DEBOUNCE_SAMPLES
-from opendbc.car.mazda.values import MazdaSafetyFlags
+from opendbc.car.mazda.values import CarControllerParams, MazdaSafetyFlags
 from opendbc.car.structs import CarParams
 from opendbc.sunnypilot.car.mazda.values import MazdaSafetyFlagsSP
 from opendbc.safety.tests.libsafety import libsafety_py
 import opendbc.safety.tests.common as common
 from opendbc.safety.tests.common import CANPackerSafety, make_msg
 
-# both-low PEDALS samples before main falls; carstate's test pins mazda.h to the same number
-DEBOUNCE = MAIN_OFF_DEBOUNCE_SAMPLES
+# both-low PEDALS samples before main falls, as carstate counts them
+DEBOUNCE = CarControllerParams.MAIN_OFF_DEBOUNCE_SAMPLES
 
 
 class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTest):
@@ -162,18 +161,19 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
 
 class TestMazdaEpsSafety(TestMazdaSafety):
   """Every gen1 Mazda EPS, steer-to-zero and legacy firmware alike: MazdaSafetyFlags.EPS_HW selects
-  the 1200-count envelope with the EPS's own 12/12 slew."""
+  the 1200-count envelope with the EPS's own 12/12 slew. The numbers are the controller's, so the
+  panda is proven against exactly what the car side runs."""
 
   SAFETY_PARAM = MazdaSafetyFlags.EPS_HW
 
-  MAX_RATE_UP = 12
-  MAX_RATE_DOWN = 12
-  MAX_TORQUE_LOOKUP = [0], [1200]
+  MAX_RATE_UP = CarControllerParams.STEER_DELTA_UP
+  MAX_RATE_DOWN = CarControllerParams.STEER_DELTA_DOWN
+  MAX_TORQUE_LOOKUP = [0], [CarControllerParams.EPS_STEER_MAX]
 
   MAX_RT_DELTA = 384
 
-  DRIVER_TORQUE_ALLOWANCE = 15
-  DRIVER_TORQUE_FACTOR = 15
+  DRIVER_TORQUE_ALLOWANCE = CarControllerParams.STEER_DRIVER_ALLOWANCE
+  DRIVER_TORQUE_FACTOR = CarControllerParams.STEER_DRIVER_MULTIPLIER
 
   def test_upstream_envelope_without_the_bit(self):
     # with it clear upstream's limits refuse the very first frame above 800 and the 12-count ramp.

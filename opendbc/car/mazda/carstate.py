@@ -13,7 +13,6 @@ ButtonType = structs.CarState.ButtonEvent.Type
 FSC_SETTLE_FRAMES = int(CarControllerParams.FSC_SETTLE_T / DT_CTRL)
 STOCK_RADAR_ALIVE_FRAMES = int(CarControllerParams.STOCK_RADAR_ALIVE_T / DT_CTRL)
 STOCK_RADAR_GUARD_FRAMES = round(CarControllerParams.STOCK_RADAR_GUARD_T / DT_CTRL)
-MAIN_OFF_DEBOUNCE_SAMPLES = round(CarControllerParams.MAIN_OFF_DEBOUNCE_T * 100)  # PEDALS is 100 Hz
 CAM_LANEINFO_FRESH_FRAMES = int(CarControllerParams.CAM_LANEINFO_FRESH_T / DT_CTRL)
 LKAS_REARM_FRAMES = round(CarControllerParams.LKAS_REARM_T / DT_CTRL)
 LKAS_REARM_FAULT_FRAMES = round(CarControllerParams.LKAS_REARM_FAULT_T / DT_CTRL)
@@ -264,7 +263,7 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
 
     if self.CP.openpilotLongitudinalControl:
       # After radar teardown, derive cruise state from PEDALS. Main follows arming and falls once
-      # both bits have been low for MAIN_OFF_DEBOUNCE_T of PEDALS samples, counted per sample so
+      # both bits have been low for MAIN_OFF_DEBOUNCE_SAMPLES PEDALS samples, counted per sample so
       # the panda's acc_main_on falls on the same one. Brake or no brake: every both-low run
       # under braking in the corpus was a real main-off, by CAN_OFF, either main-button encoding,
       # or no visible button at all.
@@ -274,8 +273,8 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
           self.cruise_available = True
           self.main_off_samples = 0
         else:
-          self.main_off_samples = min(self.main_off_samples + 1, MAIN_OFF_DEBOUNCE_SAMPLES)
-          if self.main_off_samples >= MAIN_OFF_DEBOUNCE_SAMPLES:
+          self.main_off_samples = min(self.main_off_samples + 1, CarControllerParams.MAIN_OFF_DEBOUNCE_SAMPLES)
+          if self.main_off_samples >= CarControllerParams.MAIN_OFF_DEBOUNCE_SAMPLES:
             self.cruise_available = False
       self.cruise_enabled = cp.vl["PEDALS"]["ACC_ACTIVE"] == 1
 
