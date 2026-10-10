@@ -47,15 +47,14 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
 
   @classmethod
   def controller_params(cls):
-    # the CarControllerParams branch this envelope pairs with: values.py keys it on the same
-    # EPS bit interface.py hands the panda
+    # the CarControllerParams this envelope pairs with: values.py keys it on the same EPS bit
+    # interface.py hands the panda. No Mazda runs the panda's no-param envelope any more.
+    if not cls.SAFETY_PARAM & (MazdaSafetyFlags.STEER_TO_ZERO_EPS | MazdaSafetyFlags.LEGACY_FW_EPS):
+      raise unittest.SkipTest("no controller pairs with the no-param envelope")
+
     class FakeCP:
       carFingerprint = CAR.MAZDA_CX5
-      flags = 0
-      if cls.SAFETY_PARAM & MazdaSafetyFlags.STEER_TO_ZERO_EPS:
-        flags = MazdaFlags.STEER_TO_ZERO_EPS
-      elif cls.SAFETY_PARAM & MazdaSafetyFlags.LEGACY_FW_EPS:
-        flags = MazdaFlags.LEGACY_FW_EPS
+      flags = MazdaFlags.STEER_TO_ZERO_EPS if cls.SAFETY_PARAM & MazdaSafetyFlags.STEER_TO_ZERO_EPS else MazdaFlags.LEGACY_FW_EPS
     return CarControllerParams(FakeCP())
 
   def test_controller_rate_limits_equal_the_pandas(self):

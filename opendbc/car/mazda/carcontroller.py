@@ -72,13 +72,11 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
     IntelligentCruiseButtonManagementInterface.__init__(self, CP, CP_SP)
     self.params = CarControllerParams(CP)
-    # values.py selects the measured EPS envelope from the hardware mask; the speed-dependent
-    # scale and the non-delivery latch belong to the steer-to-zero firmware alone.
-    self.eps_2022 = bool(CP.flags & MazdaFlags.EPS_HW)
+    # The non-delivery latch belongs to the steer-to-zero firmware alone.
     self.steer_to_zero = bool(CP.flags & MazdaFlags.STEER_TO_ZERO_EPS)
     self.g46l = bool(CP.flags & MazdaFlags.G46L_RADAR)
     self.apply_torque_last = 0
-    self.driver_torque_samples: deque[float] = deque(maxlen=self.params.STEER_DRIVER_SAMPLES if self.eps_2022 else 1)
+    self.driver_torque_samples: deque[float] = deque(maxlen=self.params.STEER_DRIVER_SAMPLES)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.cancel_counter = 0
     self.stop_and_go = StandstillHold()
@@ -125,17 +123,15 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
       # Clamp to applied EPS authority so controlsd can detect saturation. Keep this separate
       # from STEER_MAX because the torque parameters are expressed on STEER_MAX.
-      if self.eps_2022:
-        eps_ceiling = round(float(np.interp(CS.out.vEgoRaw, self.params.EPS_CEILING_LOOKUP[0],
-                                            self.params.EPS_CEILING_LOOKUP[1])))
-        new_torque = int(np.clip(new_torque, -eps_ceiling, eps_ceiling))
+      eps_ceiling = round(float(np.interp(CS.out.vEgoRaw, self.params.EPS_CEILING_LOOKUP[0],
+                                          self.params.EPS_CEILING_LOOKUP[1])))
+      new_torque = int(np.clip(new_torque, -eps_ceiling, eps_ceiling))
 
       # Use the worst sample plus margin to stay inside panda's fresher driver-torque envelope.
-      margin = self.params.STEER_DRIVER_MARGIN if self.eps_2022 else 0
       if new_torque >= 0:
-        driver_torque = min(self.driver_torque_samples) - margin
+        driver_torque = min(self.driver_torque_samples) - self.params.STEER_DRIVER_MARGIN
       else:
-        driver_torque = max(self.driver_torque_samples) + margin
+        driver_torque = max(self.driver_torque_samples) + self.params.STEER_DRIVER_MARGIN
 
       apply_torque = apply_driver_steer_torque_limits(new_torque, self.apply_torque_last,
                                                       driver_torque, self.params)

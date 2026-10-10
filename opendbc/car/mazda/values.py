@@ -89,47 +89,39 @@ class CarControllerParams:
   ACCEL_WINDDOWN_LIMIT = -10.0 * DT_CTRL  # m/s2 per frame, clips only the p99.9+ steps
 
   def __init__(self, CP):
-    # Every gen1 Mazda EPS runs the measured envelope; the interface sets one of the two bits.
-    if CP.flags & MazdaFlags.EPS_HW:
-      # Match the EPS hardware slew and panda safety limits in both directions.
-      self.STEER_DELTA_UP = 12
-      self.STEER_DELTA_DOWN = 12
-      self.STEER_DRIVER_MULTIPLIER = 15   # tuned for the CX-5 EPS response
-      # Use a sample window and margin to stay inside panda's fresher driver-torque envelope.
-      self.STEER_DRIVER_SAMPLES = 10
-      self.STEER_DRIVER_MARGIN = 2
+    # Every gen1 Mazda EPS runs the measured envelope: its hardware slew and the panda's limits in
+    # both directions.
+    self.STEER_DELTA_UP = 12
+    self.STEER_DELTA_DOWN = 12
+    self.STEER_DRIVER_MULTIPLIER = 15   # tuned for the CX-5 EPS response
+    # Use a sample window and margin to stay inside panda's fresher driver-torque envelope.
+    self.STEER_DRIVER_SAMPLES = 10
+    self.STEER_DRIVER_MARGIN = 2
 
-      # STEER_MAX scales normalized torque into counts at every speed; EPS_CEILING_LOOKUP is the
-      # applied limit. The EPS is linear in counts, so one scale keeps the learned torque
-      # parameters in one unit (docs/zoompilot/lateral-tune.md).
-      self.STEER_MAX = self.EPS_STEER_MAX
-      # Clamp to the measured applied-torque ceiling so controlsd can detect saturation.
-      self.EPS_CEILING_LOOKUP = ([8.0, 8.5, 9.4, 10.3, 11.2, 12.1, 13.0, 13.9, 14.5],
-                                 [1148, 1132, 1092, 1048, 1012,  920,  808,  676,  620])
+    # STEER_MAX scales normalized torque into counts at every speed; EPS_CEILING_LOOKUP is the
+    # applied limit. The EPS is linear in counts, so one scale keeps the learned torque
+    # parameters in one unit (docs/zoompilot/lateral-tune.md).
+    self.STEER_MAX = self.EPS_STEER_MAX
+    # Clamp to the measured applied-torque ceiling so controlsd can detect saturation.
+    self.EPS_CEILING_LOOKUP = ([8.0, 8.5, 9.4, 10.3, 11.2, 12.1, 13.0, 13.9, 14.5],
+                               [1148, 1132, 1092, 1048, 1012,  920,  808,  676,  620])
 
-      if CP.flags & MazdaFlags.STEER_TO_ZERO_EPS:
-        # Stop commanding after sustained zero delivery to avoid a camera steering fault. Use
-        # LKAS_EFFECTIVE because LKAS_BLOCK may still permit partial delivery.
-        self.STEER_UNDELIVERED_MIN = 200      # counts; below this the EPS rounds to zero anyway
-        self.STEER_UNDELIVERED_FRAMES = 20    # 200 ms at 100 Hz
+    if CP.flags & MazdaFlags.STEER_TO_ZERO_EPS:
+      # Stop commanding after sustained zero delivery to avoid a camera steering fault. Use
+      # LKAS_EFFECTIVE because LKAS_BLOCK may still permit partial delivery.
+      self.STEER_UNDELIVERED_MIN = 200      # counts; below this the EPS rounds to zero anyway
+      self.STEER_UNDELIVERED_FRAMES = 20    # 200 ms at 100 Hz
 
-        # Alert only after sustained non-delivery above maneuvering speed. Suppress normal
-        # low-speed standby blocks identified by LKAS_TRACK_STATE.
-        self.STEER_UNDELIVERED_ALERT_FRAMES = 80    # 0.8 s at 100 Hz, on top of the latch's 0.2
-        self.STEER_UNDELIVERED_ALERT_MIN_SPEED = 12. * CV.MPH_TO_MS
-        # A block that began below this speed is the EPS's standby from a stop, whatever
-        # LKAS_TRACK_STATE says later in it; only a block that began rolling can be a dropout.
-        # The same boundary gates the first-engagement hold in carstate: on the EPS's first
-        # engagement of the cycle it delivered nothing under standby below it on any start on
-        # record, and faulted on 3 of 13 (docs/zoompilot/mazda-lateral.md, first-activation hold).
-        self.STEER_UNDELIVERED_ALERT_ORIGIN_SPEED = 1.0  # m/s
-    else:
-      # Upstream's envelope. The interface no longer selects it for any Mazda; the panda keeps
-      # it as the no-param default, so flags == 0 must still build.
-      self.STEER_MAX = self.TUNE_STEER_MAX
-      self.STEER_DELTA_UP = 10
-      self.STEER_DELTA_DOWN = 25
-      self.STEER_DRIVER_MULTIPLIER = 1    # upstream stock
+      # Alert only after sustained non-delivery above maneuvering speed. Suppress normal
+      # low-speed standby blocks identified by LKAS_TRACK_STATE.
+      self.STEER_UNDELIVERED_ALERT_FRAMES = 80    # 0.8 s at 100 Hz, on top of the latch's 0.2
+      self.STEER_UNDELIVERED_ALERT_MIN_SPEED = 12. * CV.MPH_TO_MS
+      # A block that began below this speed is the EPS's standby from a stop, whatever
+      # LKAS_TRACK_STATE says later in it; only a block that began rolling can be a dropout.
+      # The same boundary gates the first-engagement hold in carstate: on the EPS's first
+      # engagement of the cycle it delivered nothing under standby below it on any start on
+      # record, and faulted on 3 of 13 (docs/zoompilot/mazda-lateral.md, first-activation hold).
+      self.STEER_UNDELIVERED_ALERT_ORIGIN_SPEED = 1.0  # m/s
 
 
 @dataclass

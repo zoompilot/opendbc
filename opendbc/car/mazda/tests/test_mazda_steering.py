@@ -48,14 +48,6 @@ def pre_2022_params():
   return controller_params(CAR.MAZDA_CX5)
 
 
-def upstream_params():
-  # flags == 0: upstream's envelope. The interface no longer emits it for any Mazda; the panda
-  # keeps it as the no-param default, so the pairing stays proven.
-  CP = car_params(CAR.MAZDA_CX5)
-  CP.flags = 0
-  return CarControllerParams(CP)
-
-
 def legacy_fw_params():
   # the 2022 EPS hardware on firmware that keeps the floor: measured envelope, 800 scale
   return controller_params(CAR.MAZDA_CX5_2022, car_fw=LEGACY_FW_EPS)
@@ -102,8 +94,7 @@ class TestCarControllerParams:
     (eps_swap_params, "TestMazdaSteerToZeroEpsSafety"),
     (pre_2022_params, "TestMazdaLegacyFwEpsSafety"),
     (legacy_fw_params, "TestMazdaLegacyFwEpsSafety"),
-    (upstream_params, "TestMazdaSafety"),
-  ], ids=["cx5_2022", "eps_swap", "pre_2022", "legacy_fw", "upstream"])
+  ], ids=["cx5_2022", "eps_swap", "pre_2022", "legacy_fw"])
   def test_rate_limits_equal_the_pandas_for_each_eps(self, params, panda):
     # The panda's driver_limit_check rejects any frame that retreats by less than max_rate_down
     # once the driver bound is below the last command, and any frame that climbs by more than
@@ -128,13 +119,6 @@ class TestCarControllerParams:
     # EPS present (STEER_TO_ZERO_EPS) on a non-CX-5 model still gets the higher-authority tune
     assert params.STEER_MAX == 1200
     assert params.STEER_DRIVER_MULTIPLIER == 15
-
-  def test_upstream_envelope_without_either_flag(self):
-    params = upstream_params()
-    assert not hasattr(params, 'EPS_CEILING_LOOKUP')
-    assert not hasattr(params, 'STEER_UNDELIVERED_FRAMES')
-    assert params.STEER_MAX == 800
-    assert params.STEER_DRIVER_MULTIPLIER == 1
 
   @pytest.mark.parametrize("params", [legacy_fw_params, pre_2022_params], ids=["legacy_fw_in_2022_body", "pre_2022_platform"])
   def test_legacy_firmware_gets_the_same_envelope_and_tune(self, params):
@@ -303,11 +287,6 @@ class TestDriverTorqueHeadroom:
     out = self.drive(cc, cs, [30] * 20 + seq, sign=-1.0)
     params = cx5_2022_params()
     assert out >= -params.STEER_MAX + (-self.ALLOWANCE + min(seq[-6:])) * self.MULTIPLIER
-
-  def test_no_window_on_platforms_without_the_2022_eps(self):
-    # pre-2022 params carry no STEER_DRIVER_SAMPLES, so the deque stays one deep and the
-    # behavior is the single newest sample, exactly as before
-    assert not hasattr(upstream_params(), 'STEER_DRIVER_SAMPLES')
 
 
 def test_carstate_first_engage_hold_zeroes_the_steer_command(stock_cc, stock_cs):

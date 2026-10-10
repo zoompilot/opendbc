@@ -112,12 +112,8 @@ class TestSteerRailSchedule:
     assert rail[0] == pytest.approx(1148.0 / 1200.0)
     assert rail[-1] == pytest.approx(620.0 / 1200.0)
 
-  @pytest.mark.parametrize("cp_kwargs", [
-    dict(brand="mazda", min_steer_speed=20.0),  # stock EPS params have no ceiling lookup
-    dict(brand="toyota"),
-  ], ids=["stock_mazda_eps", "toyota"])
-  def test_no_ceiling_returns_none(self, cp_kwargs):
-    assert get_steer_rail_schedule(brand_cp(**cp_kwargs)) is None
+  def test_no_ceiling_returns_none(self):
+    assert get_steer_rail_schedule(brand_cp(brand="toyota")) is None
 
 
 class TestSteerSlewSchedule:
@@ -125,12 +121,9 @@ class TestSteerSlewSchedule:
     # 12 counts/frame both ways over the flat 1200
     assert get_steer_slew_schedule(cx5_2022_cp()) == ([0.0], [12.0 / 1200.0], [12.0 / 1200.0])
 
-  def test_legacy_mazda_flat_scale(self):
-    # stock EPS params: 10 up, 25 down over a flat 800
-    bp, up, down = get_steer_slew_schedule(brand_cp(brand="mazda", min_steer_speed=20.0))
-    assert bp == [0.0]
-    assert up == [10.0 / 800.0]
-    assert down == [25.0 / 800.0]
+  def test_legacy_mazda_slew(self):
+    # legacy firmware on the same EPS hardware: the same 12 counts/frame over the flat 1200
+    assert get_steer_slew_schedule(legacy_fw_cp()) == ([0.0], [12.0 / 1200.0], [12.0 / 1200.0])
 
   @pytest.mark.parametrize("brand", ["tesla", "notabrand"])  # angle steering has no STEER_DELTA_UP/DOWN
   def test_brand_without_rate_limits_returns_none(self, brand):
