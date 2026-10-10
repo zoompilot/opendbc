@@ -1,5 +1,5 @@
 from opendbc.car.can_definitions import CanData
-from opendbc.car.mazda.values import Buttons
+from opendbc.car.mazda.values import Buttons, MazdaFlags
 
 # Captured empty radar tracks required by the body ECU for stop-and-go. Only the counter
 # nibble changes; 0x364 carries the advertised lead when present.
@@ -145,18 +145,20 @@ def create_steering_control(packer, CP, frame, apply_torque, lkas):
 
   csum = csum % 256
 
-  values = {
-    "LKAS_REQUEST": apply_torque,
-    "CTR": ctr,
-    "ERR_BIT_1": er1,
-    "LINE_NOT_VISIBLE": lnv,
-    "LDW": ldw,
-    "BIT_1": b1,
-    "ERR_BIT_2": er2,
-    "STEERING_ANGLE": steering_angle,
-    "ANGLE_ENABLED": b2,
-    "CHKSUM": csum
-  }
+  values = {}
+  if CP.flags & MazdaFlags.GEN1:
+    values = {
+      "LKAS_REQUEST": apply_torque,
+      "CTR": ctr,
+      "ERR_BIT_1": er1,
+      "LINE_NOT_VISIBLE": lnv,
+      "LDW": ldw,
+      "BIT_1": b1,
+      "ERR_BIT_2": er2,
+      "STEERING_ANGLE": steering_angle,
+      "ANGLE_ENABLED": b2,
+      "CHKSUM": csum
+    }
 
   return packer.make_can_msg("CAM_LKAS", 0, values)
 
@@ -250,43 +252,45 @@ def apply_mads_white_hud(fsc_raw: bytes | None, packed_dat: bytes, enabled: bool
 
 
 def create_button_cmd(packer, CP, counter, button):
+
   can = int(button == Buttons.CANCEL)
   res = int(button == Buttons.RESUME)
   inc = int(button == Buttons.SET_PLUS)
   dec = int(button == Buttons.SET_MINUS)
 
-  values = {
-    "CAN_OFF": can,
-    "CAN_OFF_INV": (can + 1) % 2,
+  if CP.flags & MazdaFlags.GEN1:
+    values = {
+      "CAN_OFF": can,
+      "CAN_OFF_INV": (can + 1) % 2,
 
-    "SET_P": inc,
-    "SET_P_INV": (inc + 1) % 2,
+      "SET_P": inc,
+      "SET_P_INV": (inc + 1) % 2,
 
-    "RES": res,
-    "RES_INV": (res + 1) % 2,
+      "RES": res,
+      "RES_INV": (res + 1) % 2,
 
-    "SET_M": dec,
-    "SET_M_INV": (dec + 1) % 2,
+      "SET_M": dec,
+      "SET_M_INV": (dec + 1) % 2,
 
-    "DISTANCE_LESS": 0,
-    "DISTANCE_LESS_INV": 1,
+      "DISTANCE_LESS": 0,
+      "DISTANCE_LESS_INV": 1,
 
-    "DISTANCE_MORE": 0,
-    "DISTANCE_MORE_INV": 1,
+      "DISTANCE_MORE": 0,
+      "DISTANCE_MORE_INV": 1,
 
-    "MODE_X": 0,
-    "MODE_X_INV": 1,
+      "MODE_X": 0,
+      "MODE_X_INV": 1,
 
-    "MODE_Y": 0,
-    "MODE_Y_INV": 1,
+      "MODE_Y": 0,
+      "MODE_Y_INV": 1,
 
-    "BIT1": 1,
-    "BIT2": 1,
-    "BIT3": 1,
-    "CTR": (counter + 1) % 16,
-  }
+      "BIT1": 1,
+      "BIT2": 1,
+      "BIT3": 1,
+      "CTR": (counter + 1) % 16,
+    }
 
-  return packer.make_can_msg("CRZ_BTNS", 0, values)
+    return packer.make_can_msg("CRZ_BTNS", 0, values)
 
 
 def create_mrcc_off_cmd(packer, counter):

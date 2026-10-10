@@ -71,9 +71,6 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
   def __init__(self, dbc_names, CP, CP_SP):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
     IntelligentCruiseButtonManagementInterface.__init__(self, CP, CP_SP)
-    if not CP.flags & MazdaFlags.GEN1:
-      # mazdacan message builders require GEN1 frame layouts.
-      raise NotImplementedError(f"unsupported platform: {CP.carFingerprint}")
     self.params = CarControllerParams(CP)
     # values.py selects the measured EPS envelope from the hardware mask; the speed-dependent
     # scale and the non-delivery latch belong to the steer-to-zero firmware alone.

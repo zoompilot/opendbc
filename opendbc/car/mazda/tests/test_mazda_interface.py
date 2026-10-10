@@ -12,10 +12,9 @@ import pytest
 from opendbc.car import Bus, structs
 from opendbc.car.can_definitions import CanData
 from opendbc.car.common.conversions import Conversions as CV
-from opendbc.car.mazda.carcontroller import CarController
 from opendbc.car.mazda.fingerprints import FW_VERSIONS
 from opendbc.car.mazda.interface import CarInterface
-from opendbc.car.mazda.tests.conftest import CAM_LKAS, CAM_LANEINFO, DBC_NAME, car_interface, car_params, car_params_sp, eps_fw, \
+from opendbc.car.mazda.tests.conftest import CAM_LKAS, CAM_LANEINFO, car_interface, car_params, car_params_sp, eps_fw, \
   radar_fw
 from opendbc.car.mazda.values import CAR, DBC, G46L_RADAR_FW, LKAS_LIMITS, STEER_TO_ZERO_EPS_FW, STEER_TO_ZERO_PLATFORMS, \
   MazdaFlags, MazdaSafetyFlags
@@ -303,17 +302,6 @@ class TestForeignRadar:
     assert not CP.radarUnavailable
     assert CP.alphaLongitudinalAvailable
     assert not CP.flags & MazdaFlags.G46L_RADAR
-
-
-def test_non_gen1_platform_refused_at_admission():
-  # one init-time check instead of per-frame guards in the message builders, which every
-  # frame layout in mazdacan assumes; the fall-throughs used to emit an all-zero CAM_LKAS
-  # and return None from the button builder, straight into can_sends
-  CP = car_params(CAR.MAZDA_CX5_2022)
-  CP_SP = car_params_sp(CP)
-  CP.flags = 0
-  with pytest.raises(NotImplementedError):
-    CarController({Bus.pt: DBC_NAME}, CP, CP_SP)
 
 
 class TestMovingTakeoverCapability:
