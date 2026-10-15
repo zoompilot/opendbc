@@ -201,7 +201,7 @@ class CAR(Platforms):
   MAZDA_CX5_2022 = MazdaPlatformConfig(
     [MazdaCarDocs("Mazda CX-5 2022-25")],
     MazdaCX5_2022CarSpecs(mass=3728 * CV.LB_TO_KG, wheelbase=2.698, steerRatio=18.1),  # learned; factory spec 15.5
-    wmis={WMI.JAPAN_CROSSOVER, WMI.EXPORT_CROSSOVER}, chassis_codes={'KF'}, years={'N', 'P', 'R', 'S'},  # 2022-25
+    wmis={WMI.JAPAN_CROSSOVER, WMI.EXPORT_CROSSOVER}, chassis_codes={'KF'}, years={'N', 'P', 'R', 'S', 'T'},  # 2022-26; a JM7 KF T VIN attested (GCC); NA 2026 is KM
   )
   MAZDA_CX8_2023 = MazdaPlatformConfig(
     [MazdaCarDocs("Mazda CX-8 2023")],
