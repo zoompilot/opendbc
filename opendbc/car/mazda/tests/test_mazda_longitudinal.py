@@ -236,7 +236,7 @@ def test_throttle_lift_follows_stock_but_braking_does_not_wait(cc, cs):
 def test_ceiling_follows_stock_by_speed(cc, cs):
   """The wire never asks for more than stock's own accelerating command at that speed."""
   assert max(CarControllerParams.ACCEL_CEILING_V) <= CarControllerParams.ACCEL_MAX
-  for v_ego, ceiling in ((4., 1.75), (14., 1.05), (25., 0.65), (35., 0.65)):
+  for v_ego, ceiling in ((4., 1.75), (14., 0.95), (25., 0.65), (35., 0.65)):
     cc.accel_last = 2.0
     for _ in range(seconds(1.0)):  # settles through the lift limit
       step_long(cc, cs, accel=2.0, cruise_engaged=True, v_ego=v_ego)
@@ -257,7 +257,7 @@ def test_accel_limit_follows_the_shortfall_to_the_set_speed():
   assert limits(20., 1.) == (CarControllerParams.ACCEL_MIN, pytest.approx(0.37, abs=0.01))
   assert limits(20., 2.5)[1] < 0.45  # stock p90 for 1.5 to 3 m/s
   assert limits(20., -5.)[1] == pytest.approx(0.38 * limits(20., 30.)[1])  # over the set speed
-  for v_ego, ceiling in ((0., 1.5), (4., 1.75), (14., 1.05), (25., 0.65)):
+  for v_ego, ceiling in ((0., 1.5), (4., 1.75), (14., 0.95), (25., 0.65)):
     assert limits(v_ego, 30.)[1] == pytest.approx(ceiling)
   assert all(np.diff(CarControllerParams.ACCEL_GAP_FRACTION) > 0) and CarControllerParams.ACCEL_GAP_FRACTION[-1] == 1.
 

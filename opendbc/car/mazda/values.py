@@ -71,7 +71,7 @@ class CarControllerParams:
   # build rate (taken a third quicker once rolling: the plan sees a lead pull away before the radar
   # would). Positive commands only, so braking is never held longer than the plan asks.
   ACCEL_CEILING_BP = [0., 4., 9., 14., 18., 25.]  # m/s
-  ACCEL_CEILING_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s2
+  ACCEL_CEILING_V = [1.5, 1.75, 1.45, 0.95, 0.85, 0.65]  # m/s2, 14 m/s under stock's 1.05 to hold fourth
   ACCEL_BUILD_BP = [3., 6., 12., 20.]   # m/s
   ACCEL_BUILD_V = [ACCEL_RELEASE_RAMP, 0.8, 0.8, 0.6]  # m/s3, stock's own 0.6 at highway speed
   # Stock's throttle lift rate, while the plan is still >= 0; a brake request skips it.
