@@ -39,7 +39,7 @@ class CarControllerParams:
   LONG_STEP = 2        # CRZ_INFO/CRZ_CTRL at 50 Hz, matching stock
   RADAR_STEP = 10      # radar static + track frames at 10 Hz
 
-  FSC_SETTLE_T = 7.0           # the camera's cold-boot radar check settled before the teardown may start
+  FSC_SETTLE_T = 1.0           # two CAM_LANEINFO frames past the camera's boot marker before the teardown may start
   STOCK_RADAR_ALIVE_T = 0.05   # a normal CRZ_INFO gap; it does not establish ownership
   STOCK_RADAR_GUARD_T = 1.27   # silence before ownership is trusted, ~12x the longest stock gap
   CAM_LANEINFO_FRESH_T = 1.5   # longer than one ~2 Hz CAM_LANEINFO period
