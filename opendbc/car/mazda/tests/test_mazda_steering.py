@@ -421,15 +421,14 @@ class TestDriverTorqueHeadroom:
 
 
 class TestDriverOverride:
-  """A push against the command keeps the same share of it at every speed. The headroom envelope
-  sits on the 1200 rail, so above 13 m/s, under the 620 ceiling, it never cut anything."""
+  """A push against the command keeps the same share of it at every speed."""
 
   @staticmethod
-  def settle(v_ego, driver_torque, torque=0.3):
+  def settle(v_ego, driver_torque):
     cc = car_controller(alpha_long=False)
     cs = mazda_car_state(cc.CP, cc.CP_SP)
     for _ in range(200):
-      actuators, _ = step(cc, cs, long_active=False, enabled=True, lat_active=True, torque=torque,
+      actuators, _ = step(cc, cs, long_active=False, enabled=True, lat_active=True, torque=0.3,
                           v_ego=v_ego, driver_torque=driver_torque, steering_pressed=driver_torque != 0)
     return actuators.torqueOutputCan
 

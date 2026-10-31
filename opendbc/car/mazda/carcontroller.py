@@ -109,7 +109,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
                                           self.params.EPS_CEILING_LOOKUP[1])))
       new_torque = int(np.clip(new_torque, -eps_ceiling, eps_ceiling))
 
-      # Yield to a driver pushing against the command by the same share at every speed.
+      # Yield a share of the command to a driver pushing against it.
       driver_opposing = -np.sign(new_torque) * CS.out.steeringTorque
       new_torque = int(round(new_torque * float(np.interp(driver_opposing, self.params.STEER_OVERRIDE_BP,
                                                           self.params.STEER_OVERRIDE_V))))
