@@ -24,6 +24,10 @@ class CarControllerParams:
   STEER_DRIVER_ALLOWANCE = 15     # allowed driver torque before start limiting
   STEER_DRIVER_MULTIPLIER = 15    # weight driver torque, tuned for the 2022 EPS
   STEER_DRIVER_FACTOR = 1         # from dbc
+  # The share of the command given up to a driver pushing against it, the same at every speed.
+  # The headroom above is on the 1200 rail, so it never reached the 620 highway ceiling.
+  STEER_OVERRIDE_BP = [STEER_DRIVER_ALLOWANCE, 50]  # opposing driver torque, counts
+  STEER_OVERRIDE_V = [1., 0.]                       # fraction of the command kept
   STEER_STEP = 1  # 100 Hz
   # Upstream's STEER_MAX, the scale params.toml's tunes, NNLC models and the manual torque override
   # use: latAccelFactor x TUNE_SCALE, friction / TUNE_SCALE.
