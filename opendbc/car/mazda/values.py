@@ -42,6 +42,7 @@ class CarControllerParams:
   FSC_SETTLE_T = 1.0           # two CAM_LANEINFO frames past the camera's boot marker before the teardown may start
   STOCK_RADAR_ALIVE_T = 0.05   # a normal CRZ_INFO gap; it does not establish ownership
   STOCK_RADAR_GUARD_T = 1.27   # silence before ownership is trusted, ~12x the longest stock gap
+  STOCK_RADAR_ACK_GUARD_T = 0.25  # the same once the radar acknowledged our programming request
   CAM_LANEINFO_FRESH_T = 1.5   # longer than one ~2 Hz CAM_LANEINFO period
 
   # The car's lane keep back on, the EPS holds LKAS_BLOCK for ~3 s whatever it is sent.
