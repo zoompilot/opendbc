@@ -107,6 +107,13 @@ def has_bsm(CP: structs.CarParams, CP_SP: structs.CarParamsSP | None) -> bool:
   return CP.brand in BSM_FLAGS and bool(CP.flags & BSM_FLAGS[CP.brand])
 
 
+def has_speed_limit(CP: structs.CarParams, CP_SP: structs.CarParamsSP | None) -> bool:
+  """Whether carstate_ext fills CarStateSP.speedLimit (the limit the car shows)."""
+  if CP.brand == "hyundai":
+    return CP_SP is not None and bool(CP_SP.flags & (HyundaiFlagsSP.SPEED_LIMIT_AVAILABLE | HyundaiFlagsSP.HAS_LKAS12))
+  return CP.brand in ("mazda", "tesla", "toyota")
+
+
 def setup_interfaces(CI, CP: structs.CarParams, CP_SP: structs.CarParamsSP,
                      params_list: list[dict[str, str]] | None = None,
                      can_recv: CanRecvCallable | None = None, can_send: CanSendCallable | None = None) -> None:
@@ -189,6 +196,7 @@ def _initialize_toyota(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params
   if CP.brand == 'toyota':
     toyota_stock_long = int(params_dict.get("ToyotaEnforceStockLongitudinal", 0)) == 1
     toyota_stop_and_go_hack = int(params_dict.get("ToyotaStopAndGoHack", 0)) == 1
+    toyota_tss2_smooth = int(params_dict.get("ToyotaTSS2Smooth", 0)) == 1
 
     if toyota_stock_long:
       CP_SP.flags |= ToyotaFlagsSP.STOCK_LONGITUDINAL.value
@@ -198,6 +206,9 @@ def _initialize_toyota(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params
 
     if toyota_stop_and_go_hack and CP.openpilotLongitudinalControl:
       CP_SP.flags |= ToyotaFlagsSP.STOP_AND_GO_HACK.value
+
+    if toyota_tss2_smooth and CP.flags & ToyotaFlags.TSS2 and CP.openpilotLongitudinalControl:
+      CP_SP.flags |= ToyotaFlagsSP.TSS2_SMOOTH.value
 
 
 def _initialize_mazda(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params_dict: dict[str, str]) -> None:

@@ -24,6 +24,10 @@ class CarControllerParams:
   STEER_DRIVER_ALLOWANCE = 15     # allowed driver torque before start limiting
   STEER_DRIVER_MULTIPLIER = 15    # weight driver torque, tuned for the 2022 EPS
   STEER_DRIVER_FACTOR = 1         # from dbc
+  # The share of the command given up to a driver pushing against it, the same at every speed.
+  # The headroom above is on the 1200 rail, so it never reached the 620 highway ceiling.
+  STEER_OVERRIDE_BP = [STEER_DRIVER_ALLOWANCE, 50]  # opposing driver torque, counts
+  STEER_OVERRIDE_V = [1., 0.]                       # fraction of the command kept
   STEER_STEP = 1  # 100 Hz
   # Upstream's STEER_MAX, the scale params.toml's tunes, NNLC models and the manual torque override
   # use: latAccelFactor x TUNE_SCALE, friction / TUNE_SCALE.
@@ -39,9 +43,10 @@ class CarControllerParams:
   LONG_STEP = 2        # CRZ_INFO/CRZ_CTRL at 50 Hz, matching stock
   RADAR_STEP = 10      # radar static + track frames at 10 Hz
 
-  FSC_SETTLE_T = 7.0           # the camera's cold-boot radar check settled before the teardown may start
+  FSC_SETTLE_T = 1.0           # two CAM_LANEINFO frames past the camera's boot marker before the teardown may start
   STOCK_RADAR_ALIVE_T = 0.05   # a normal CRZ_INFO gap; it does not establish ownership
   STOCK_RADAR_GUARD_T = 1.27   # silence before ownership is trusted, ~12x the longest stock gap
+  STOCK_RADAR_ACK_GUARD_T = 0.25  # the same once the radar acknowledged our programming request
   CAM_LANEINFO_FRESH_T = 1.5   # longer than one ~2 Hz CAM_LANEINFO period
 
   # The car's lane keep back on, the EPS holds LKAS_BLOCK for ~3 s whatever it is sent.
@@ -65,14 +70,16 @@ class CarControllerParams:
   # Permit a bounded breakaway ramp because Mazda longitudinal control has no integrator.
   ACCEL_BREAKAWAY_MAX = 1.45  # m/s2, ceiling for the still-stopped release ramp
   ACCEL_BREAKAWAY_OVERSHOOT = 0.75  # m/s2 above the plan the still-stopped ramp may climb
+  ACCEL_BREAKAWAY_RAMP = 2.5  # m/s3, the still-stopped climb once past stock's release frames
 
-  # Shape positive commands like stock MRCC: its accelerating command's ceiling by speed, and its
-  # build rate (taken a third quicker once rolling: the plan sees a lead pull away before the radar
-  # would). Positive commands only, so braking is never held longer than the plan asks.
-  ACCEL_CEILING_BP = [0., 4., 9., 14., 18., 25.]  # m/s
-  ACCEL_CEILING_V = [1.5, 1.75, 1.45, 1.05, 0.85, 0.65]  # m/s2
-  ACCEL_BUILD_BP = [3., 6.]   # m/s
-  ACCEL_BUILD_V = [ACCEL_RELEASE_RAMP, 0.8]  # m/s3
+  # Positive command ceiling and build rate by speed. In town the plan already limits jerk, so the
+  # build matches the 3-4 m/s3 other ports send and the ceiling only binds from 11 m/s. At highway
+  # speed both follow stock MRCC (ceiling under stock's 1.05 from 14 m/s, build stock's 0.6 from
+  # 20) to hold the gear. Positive commands only, so braking is never held longer than the plan asks.
+  ACCEL_CEILING_BP = [11., 14., 18., 25.]  # m/s
+  ACCEL_CEILING_V = [ACCEL_MAX, 0.95, 0.85, 0.65]  # m/s2
+  ACCEL_BUILD_BP = [12., 16., 20.]   # m/s
+  ACCEL_BUILD_V = [3.0, 0.8, 0.6]  # m/s3
   # Stock's throttle lift rate, while the plan is still >= 0; a brake request skips it.
   ACCEL_LIFT_LIMIT = -2.0  # m/s3
   # Limit upward plan-command slew in the brake region without delaying braking response.

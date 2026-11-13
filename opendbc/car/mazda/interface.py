@@ -73,7 +73,8 @@ class CarInterface(CarInterfaceBase):
       ret.pcmCruise = True
       ret.radarUnavailable = True
       ret.stopAccel = -1.0  # stock MRCC standstill command, raw -1024
-      ret.longitudinalActuatorDelay = 0.36  # measured ~0.3 s dead time + ~0.3 s first-order lag
+      # Gas responds in 0-0.2 s, the friction brake in 0.75-0.85 s.
+      ret.longitudinalActuatorDelay = 0.5
 
     carlog.debug({"event": "mazdaRadarVerdict", "radarUnavailable": ret.radarUnavailable,
                   "platformClaim": Bus.radar in DBC[candidate], "g46lRadar": g46l_radar, "steerToZeroEps": steer_to_zero})
@@ -81,8 +82,8 @@ class CarInterface(CarInterfaceBase):
     if 0x477 in fingerprint[0]:
       ret.flags |= MazdaFlags.HAS_BSM.value
 
-    # lagd starts from this plus 0.2 s; CX-5 drives learn 0.23-0.26 s request-to-yaw.
-    ret.steerActuatorDelay = 0.05
+    # lagd starts from this plus 0.2 s; CX-5 drives learn 0.30-0.34 s.
+    ret.steerActuatorDelay = 0.14
     ret.steerLimitTimer = 0.8
 
     CarInterface.configure_torque_tune(candidate, ret.lateralTuning)
