@@ -243,6 +243,18 @@ class TestMazdaLongitudinalSafety(TestMazdaEpsSafety, common.LongitudinalAccelSa
     self._rx(self._pcm_status_msg(True))
     self.assertFalse(self.safety.get_controls_allowed())
 
+  def test_button_window_counts_each_frame_once(self):
+    # both safety copies count CRZ_BTNS frames, each once per frame: the window is 10 frames
+    for idle, allowed in ((9, True), (10, False)):
+      with self.subTest(idle=idle):
+        self._reset_safety_hooks()
+        self._rx(self._pcm_status_msg(False))
+        self._press_set()
+        for _ in range(idle):
+          self._rx(self._button_msg())
+        self._rx(self._pcm_status_msg(True))
+        self.assertEqual(allowed, self.safety.get_controls_allowed())
+
   def test_armed_controls_latch_past_the_window(self):
     self._press_set()
     self._rx(self._pcm_status_msg(True))
