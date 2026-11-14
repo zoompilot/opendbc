@@ -479,7 +479,7 @@ class TestMazdaLongitudinalSafety(TestMazdaEpsSafety, common.LongitudinalAccelSa
         self.assertTrue(self._tx(msg))
 
 
-class MazdaTjaButtonBase(unittest.TestCase):
+class MazdaTjaButtonBase(common.SafetyTestBase):
   """MADS on, the TJA button declared (or not) through the sunnypilot safety param."""
 
   TJA_BUTTON = False
@@ -490,12 +490,16 @@ class MazdaTjaButtonBase(unittest.TestCase):
     self._init(tja_button=self.TJA_BUTTON)
 
   def _init(self, tja_button, param=0):
-    self.safety.set_current_safety_param_sp(MazdaSafetyFlagsSP.TJA_BUTTON if tja_button else 0)
+    param_sp = MazdaSafetyFlagsSP.TJA_BUTTON if tja_button else 0
+    self.safety.set_current_safety_param_sp(param_sp)
     self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, param)
     self.safety.init_tests()
+    # init_tests clears it: keep the param the hooks were built from, so _reset_safety_hooks rebuilds them
+    self.safety.set_current_safety_param_sp(param_sp)
     self.safety.set_mads_params(True, False, False)
 
   def tearDown(self):
+    super().tearDown()
     self.safety.set_current_safety_param_sp(0)
     self.safety.set_mads_params(False, False, False)
 
@@ -657,7 +661,7 @@ class TestMazdaMainOnMads(MazdaTjaButtonBase):
     self.assertTrue(self.safety.get_controls_allowed_lateral())
 
 
-class TestMazdaIgnition(unittest.TestCase):
+class TestMazdaIgnition(common.SafetyTestBase):
   TX_MSGS: list = []
 
   def setUp(self):
@@ -697,6 +701,12 @@ class TestMazdaMrccOffCleanup(MazdaTjaButtonBase):
 
   def test_exact_tap_allowed_declared_and_armed(self):
     # not controlling: this is the whole point of the exception
+    self.safety.safety_rx_hook(self._pedals(True))
+    self.assertTrue(self.safety.safety_tx_hook(self._mrcc_off()))
+
+  def test_exact_tap_allowed_after_reset_safety_hooks(self):
+    # rebuilt from the same declaration
+    self._reset_safety_hooks()
     self.safety.safety_rx_hook(self._pedals(True))
     self.assertTrue(self.safety.safety_tx_hook(self._mrcc_off()))
 
