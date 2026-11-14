@@ -88,95 +88,92 @@ static bool mazda_radar_capture_msg_valid(const CANPacket_t *msg) {
 
 // track msgs coming from OP so that we know what CAM msgs to drop and what to forward
 static void mazda_rx_hook(const CANPacket_t *msg) {
-  if ((int)msg->bus == MAZDA_MAIN) {
-    if (msg->addr == MAZDA_ENGINE_DATA) {
-      // sample speed: scale by 0.01 to get kph
-      int speed = (msg->data[2] << 8) | msg->data[3];
-      safety.vehicle_moving = speed > 10; // moving when speed > 0.1 kph
-    }
+  if (msg_matches(msg, MAZDA_ENGINE_DATA, MAZDA_MAIN)) {
+    // sample speed: scale by 0.01 to get kph
+    int speed = (msg->data[2] << 8) | msg->data[3];
+    safety.vehicle_moving = speed > 10;  // moving when speed > 0.1 kph
+  }
 
-    if (msg->addr == MAZDA_STEER_TORQUE) {
-      int torque_driver_new = msg->data[0] - 127U;
-      // update array of samples
-      update_sample(&safety.torque_driver, torque_driver_new);
-    }
+  if (msg_matches(msg, MAZDA_STEER_TORQUE, MAZDA_MAIN)) {
+    int torque_driver_new = msg->data[0] - 127U;
+    // update array of samples
+    update_sample(&safety.torque_driver, torque_driver_new);
+  }
 
-    // enter controls on rising edge of ACC, exit controls on ACC off
-    if ((msg->addr == MAZDA_CRZ_CTRL) && !safety_setup.mazda_longitudinal) {
-      bool cruise_engaged = msg->data[0] & 0x8U;
-      pcm_cruise_check(cruise_engaged);
-      // With the TJA button owning lateral, MRCC no longer drives the MADS main edge: its
-      // falling edge would exit the panda's lateral while the software's MADS stays on.
-      if (!safety_setup.mazda_tja_button) {
-        safety.acc_main_on = GET_BIT(msg, 17U);
-      }
+  // enter controls on rising edge of ACC, exit controls on ACC off
+  if (msg_matches(msg, MAZDA_CRZ_CTRL, MAZDA_MAIN) && !safety_setup.mazda_longitudinal) {
+    bool cruise_engaged = msg->data[0] & 0x8U;
+    pcm_cruise_check(cruise_engaged);
+    // With the TJA button owning lateral, MRCC no longer drives the MADS main edge: its
+    // falling edge would exit the panda's lateral while the software's MADS stays on.
+    if (!safety_setup.mazda_tja_button) {
+      safety.acc_main_on = GET_BIT(msg, 17U);
     }
+  }
 
-    if (msg->addr == MAZDA_CRZ_BTNS) {
-      // TJA-declared cars keep their own lateral switch. Otherwise ON rearms lateral in standby,
-      // since a main that stayed on through boot can expire before selfdrived is ready.
-      bool lateral_button = safety_setup.mazda_tja_button ? GET_BIT(msg, MAZDA_TJA_BUTTON_BIT) : (safety.acc_main_on && GET_BIT(msg, MAZDA_MODE_Y_BIT));
-      safety.mads_button_press = lateral_button ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
+  if (msg_matches(msg, MAZDA_CRZ_BTNS, MAZDA_MAIN)) {
+    // TJA-declared cars keep their own lateral switch. Otherwise ON rearms lateral in standby,
+    // since a main that stayed on through boot can expire before selfdrived is ready.
+    bool lateral_button = safety_setup.mazda_tja_button ? GET_BIT(msg, MAZDA_TJA_BUTTON_BIT) : (safety.acc_main_on && GET_BIT(msg, MAZDA_MODE_Y_BIT));
+    safety.mads_button_press = lateral_button ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
+  }
+
+  if (msg_matches(msg, MAZDA_CRZ_BTNS, MAZDA_MAIN) && safety_setup.mazda_longitudinal) {
+    // A physical cancel press always exits controls.
+    if (GET_BIT(msg, 0U)) {
+      safety.controls_allowed = false;
     }
+    // Record SET/RES intent for the engagement qualifier below.
+    if (GET_BIT(msg, 2U) || GET_BIT(msg, 4U) || GET_BIT(msg, 5U)) {
+      safety.mazda_engage_btn_frames = MAZDA_ENGAGE_BTN_WINDOW;
+    } else if (safety.mazda_engage_btn_frames > 0U) {
+      safety.mazda_engage_btn_frames -= 1U;
+    } else {
+    }
+  }
 
-    if ((msg->addr == MAZDA_CRZ_BTNS) && safety_setup.mazda_longitudinal) {
-      // A physical cancel press always exits controls.
-      if (GET_BIT(msg, 0U)) {
-        safety.controls_allowed = false;
-      }
-      // Record SET/RES intent for the engagement qualifier below.
-      if (GET_BIT(msg, 2U) || GET_BIT(msg, 4U) || GET_BIT(msg, 5U)) {
-        safety.mazda_engage_btn_frames = MAZDA_ENGAGE_BTN_WINDOW;
-      } else if (safety.mazda_engage_btn_frames > 0U) {
-        safety.mazda_engage_btn_frames -= 1U;
+  if (msg_matches(msg, MAZDA_ENGINE_DATA, MAZDA_MAIN)) {
+    safety.gas_pressed = (msg->data[4] | (msg->data[5] & 0xF0U)) != 0U;
+  }
+
+  if (msg_matches(msg, MAZDA_PEDALS, MAZDA_MAIN)) {
+    safety.brake_pressed = (msg->data[0] & 0x10U);
+    // The live MRCC arm from the body's own PEDALS bits, the sample mrcc_armed_raw reads, so the
+    // MRCC-off exception opens on the frame the controller first sends (CRZ_CTRL lags it).
+    safety.mazda_acc_armed = GET_BIT(msg, 2U) || GET_BIT(msg, 3U);
+    if (safety_setup.mazda_longitudinal) {
+      // Derive cruise state from PEDALS after radar teardown.
+      bool cruise_engaged = GET_BIT(msg, 3U);
+      bool brake_free = !safety.brake_pressed && !safety.brake_pressed_prev;
+
+      // Main mirrors carstate's cruise_available sample for sample: a main that falls on one side
+      // only steers MADS into rejected frames (docs/zoompilot/mazda-longitudinal.md).
+      if (safety_setup.mazda_tja_button) {
+        // the button is the lateral switch; MRCC is cruise only
+      } else if (safety.mazda_acc_armed) {
+        // The radar takeover gates cruise (controls_allowed below), never main.
+        safety.acc_main_on = true;
+        safety.mazda_main_off_samples = 0U;
       } else {
-      }
-    }
-
-    if (msg->addr == MAZDA_ENGINE_DATA) {
-      safety.gas_pressed = (msg->data[4] || (msg->data[5] & 0xF0U));
-    }
-
-    if (msg->addr == MAZDA_PEDALS) {
-      bool brake = (msg->data[0] & 0x10U);
-      // The live MRCC arm from the body's own PEDALS bits, the sample mrcc_armed_raw reads, so the
-      // MRCC-off exception opens on the frame the controller first sends (CRZ_CTRL lags it).
-      safety.mazda_acc_armed = GET_BIT(msg, 2U) || GET_BIT(msg, 3U);
-      if (safety_setup.mazda_longitudinal) {
-        // Derive cruise state from PEDALS after radar teardown.
-        bool cruise_engaged = GET_BIT(msg, 3U);
-        bool brake_free = !brake && !safety.brake_pressed_prev;
-
-        // Main mirrors carstate's cruise_available sample for sample: a main that falls on one side
-        // only steers MADS into rejected frames (docs/zoompilot/mazda-longitudinal.md).
-        if (safety_setup.mazda_tja_button) {
-          // the button is the lateral switch; MRCC is cruise only
-        } else if (safety.mazda_acc_armed) {
-          // The radar takeover gates cruise (controls_allowed below), never main.
-          safety.acc_main_on = true;
-          safety.mazda_main_off_samples = 0U;
-        } else {
-          if (safety.mazda_main_off_samples < MAZDA_MAIN_OFF_DEBOUNCE) {
-            safety.mazda_main_off_samples += 1U;
-          }
-          if (safety.mazda_main_off_samples >= MAZDA_MAIN_OFF_DEBOUNCE) {
-            safety.acc_main_on = false;
-          }
+        if (safety.mazda_main_off_samples < MAZDA_MAIN_OFF_DEBOUNCE) {
+          safety.mazda_main_off_samples += 1U;
         }
-
-        if (safety.mazda_acc_armed || safety.cruise_engaged_prev || brake_free) {
-          // Require recent SET/RES intent on the engaged edge; ACC_ACTIVE alone may acknowledge
-          // synthetic traffic rather than a driver request.
-          if (cruise_engaged && !safety.cruise_engaged_prev && (safety.mazda_engage_btn_frames > 0U)) {
-            safety.controls_allowed = true;
-          }
-          if (!cruise_engaged) {
-            safety.controls_allowed = false;
-          }
-          safety.cruise_engaged_prev = cruise_engaged;
+        if (safety.mazda_main_off_samples >= MAZDA_MAIN_OFF_DEBOUNCE) {
+          safety.acc_main_on = false;
         }
       }
-      safety.brake_pressed = brake;
+
+      if (safety.mazda_acc_armed || safety.cruise_engaged_prev || brake_free) {
+        // Require recent SET/RES intent on the engaged edge; ACC_ACTIVE alone may acknowledge
+        // synthetic traffic rather than a driver request.
+        if (cruise_engaged && !safety.cruise_engaged_prev && (safety.mazda_engage_btn_frames > 0U)) {
+          safety.controls_allowed = true;
+        }
+        if (!cruise_engaged) {
+          safety.controls_allowed = false;
+        }
+        safety.cruise_engaged_prev = cruise_engaged;
+      }
     }
   }
 }
@@ -193,7 +190,6 @@ static bool mazda_openpilot_controlling(void) {
 }
 
 static bool mazda_tx_hook(const CANPacket_t *msg) {
-  // Upstream's envelope, the no-param default.
   const TorqueSteeringLimits MAZDA_STEERING_LIMITS = {
     .max_torque = 800,
     .max_rate_up = 10,
@@ -204,7 +200,7 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
     .type = TorqueDriverLimited,
   };
 
-  // The measured EPS envelope: the EPS's ~1000 counts/s hardware slew (12 counts per 12 ms 0x241
+  // The measured EPS envelope, which MAZDA_PARAM_EPS_HW selects over the one above: the EPS's ~1000 counts/s hardware slew (12 counts per 12 ms 0x241
   // frame) at 100 Hz, with max_rate_down equal to the controller retreat rate so driver-limit
   // winddown frames remain valid.
   const TorqueSteeringLimits MAZDA_EPS_HW_STEERING_LIMITS = {
@@ -225,10 +221,11 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
   };
 
   bool tx = true;
-  bool main_bus = msg->bus == (unsigned char)MAZDA_MAIN;
-  bool long_replacement_bus = main_bus || (msg->bus == (unsigned char)MAZDA_CAM);
-
-  if (main_bus && (msg->addr == MAZDA_LKAS)) {
+  // longitudinal replaces the radar's frames on both sides of the harness
+  bool long_replacement_bus = (msg->bus == (unsigned char)MAZDA_MAIN) || (msg->bus == (unsigned char)MAZDA_CAM);
+  // Check if msg is sent on the main BUS
+  // steer cmd checks
+  if (msg_matches(msg, MAZDA_LKAS, MAZDA_MAIN)) {
     int desired_torque = (((msg->data[0] & 0x0FU) << 8) | msg->data[1]) - 2048U;
 
     const TorqueSteeringLimits *limits = &MAZDA_STEERING_LIMITS;
@@ -241,7 +238,7 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
   }
 
   // Run after steering checks, which reset rate-limit state while disengaged.
-  if (main_bus && mazda_is_lka_addr(msg->addr) && !mazda_openpilot_controlling()) {
+  if ((msg_matches(msg, MAZDA_LKAS, MAZDA_MAIN) || msg_matches(msg, MAZDA_LKAS_HUD, MAZDA_MAIN)) && !mazda_openpilot_controlling()) {
     tx = false;
   }
 
@@ -283,7 +280,7 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
     }
   }
 
-  if (safety_setup.mazda_longitudinal && main_bus && (msg->addr == MAZDA_RADAR_UDS)) {
+  if (safety_setup.mazda_longitudinal && msg_matches(msg, MAZDA_RADAR_UDS, MAZDA_MAIN)) {
     // Allow tester-present and default/programming session control only.
     bool tester_present = (msg->data[0] == 0x02U) && (msg->data[1] == 0x3eU) && (msg->data[2] == 0x80U);
     bool session_control = (msg->data[0] == 0x02U) && (msg->data[1] == 0x10U) &&
@@ -293,8 +290,10 @@ static bool mazda_tx_hook(const CANPacket_t *msg) {
     }
   }
 
-  if (main_bus && (msg->addr == MAZDA_CRZ_BTNS)) {
-    // Permit resume only while controlling and cancel only while not controlling.
+  // cruise buttons check
+  if (msg_matches(msg, MAZDA_CRZ_BTNS, MAZDA_MAIN)) {
+    // allow resume spamming while controls allowed, but
+    // only allow cancel while controls not allowed
     bool cancel_cmd = (msg->data[0] == 0x1U);
     const bool mrcc_off_candidate = !GET_BIT(msg, 16U) && GET_BIT(msg, 15U);
     const bool mrcc_off_cmd = safety_setup.mazda_tja_button && safety.mazda_acc_armed && mazda_mrcc_off_msg_valid(msg);
@@ -329,10 +328,6 @@ static bool mazda_fwd_hook(int bus_num, int addr) {
 }
 
 static safety_config mazda_init(uint16_t param) {
-  safety.mazda_engage_btn_frames = 0U;
-  safety.mazda_main_off_samples = 0U;
-  safety.mazda_acc_armed = false;
-
   static const CanMsg MAZDA_TX_MSGS[] = {
     {MAZDA_LKAS, 0, 8, .check_relay = true, .disable_static_blocking = true},
     {MAZDA_CRZ_BTNS, 0, 8, .check_relay = false},
@@ -385,7 +380,6 @@ static safety_config mazda_init(uint16_t param) {
   safety_setup.mazda_longitudinal = GET_FLAG(param, MAZDA_PARAM_LONGITUDINAL);
   safety_setup.mazda_eps_hw = GET_FLAG(param, MAZDA_PARAM_EPS_HW);
   safety_setup.mazda_tja_button = GET_FLAG(safety_setup.current_safety_param_sp, MAZDA_PARAM_SP_TJA_BUTTON);
-  safety.acc_main_on = false;
 
   return safety_setup.mazda_longitudinal ? BUILD_SAFETY_CFG(mazda_long_rx_checks, MAZDA_LONG_TX_MSGS) :
                               BUILD_SAFETY_CFG(mazda_rx_checks, MAZDA_TX_MSGS);
