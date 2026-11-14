@@ -1254,7 +1254,8 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase, RxChecksSafetyTestBase):
 
   def test_safety_tick_mode_transition(self):
     # the first tick after a mode change can land before a slow message's first frame:
-    # it blocks controls either way, but reports only what was seen until the transition is over
+    # it blocks controls either way, but reports only what was seen until the transition is over.
+    # the tick counts itself into safety_mode_cnt before the checks, so mode_cnt is the count before it
     for mode_cnt in range(3):
       for seen in (False, True):
         with self.subTest(mode_cnt=mode_cnt, seen=seen):
@@ -1269,7 +1270,7 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase, RxChecksSafetyTestBase):
           self.safety.safety_tick()
           self.assertFalse(self.safety.get_controls_allowed())
           self.assertFalse(self.safety.get_controls_allowed_lateral())
-          self.assertEqual(self.safety.get_safety_rx_checks_invalid(), seen or mode_cnt > 1)
+          self.assertEqual(self.safety.get_safety_rx_checks_invalid(), seen or mode_cnt > 0)
 
   def test_rx_lagging(self):
     # a check lags after 10 missed messages or 1 s, whichever is longer. checks are at least 10 Hz, so it is always 1 s
