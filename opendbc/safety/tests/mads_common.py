@@ -422,14 +422,14 @@ class MadsSafetyTestBase(unittest.TestCase):
     self.safety.set_controls_allowed_lateral(True)
     self.safety.set_heartbeat_engaged_mads(False)
     for _ in range(3):
-      self.safety.mads_heartbeat_engaged_check()
+      self.safety.safety_heartbeat_check()
     self.assertFalse(self.safety.get_controls_allowed_lateral())
 
     self._rx(self._lkas_button_msg(True))
     self._rx(self._lkas_button_msg(False))
     self.assertTrue(self.safety.get_controls_allowed_lateral())
     # the heartbeat still says off: one check is a first mismatch, not a fourth
-    self.safety.mads_heartbeat_engaged_check()
+    self.safety.safety_heartbeat_check()
     self.assertTrue(self.safety.get_controls_allowed_lateral(), "a stale mismatch count ended a fresh engagement")
 
   def test_mads_button_not_engaged_without_press(self):
