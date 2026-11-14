@@ -53,6 +53,9 @@ uint64_t GET_BYTES_64_LE(const CANPacket_t *msg, int start, int len) {
 
 const int MAX_WRONG_COUNTERS = 5;
 
+// allow 1s of transition timeout after relay changes state before assessing malfunctioning
+static const uint32_t RELAY_TRNS_TIMEOUT = 1U;
+
 // UM2331 CPU_SM_2 and RAM_SM_3: rx, tx, fwd and tick run on two copies of the state and config and compare the decisions, the tick also compares the copies
 SafetyCopy safety_a = {.state = {.mads_button_press = MADS_BUTTON_UNAVAILABLE}, .setup = {.current_hooks = &nooutput_hooks}};
 SafetyCopy safety_b = {.state = {.mads_button_press = MADS_BUTTON_UNAVAILABLE}, .setup = {.current_hooks = &nooutput_hooks}};
@@ -264,7 +267,6 @@ static void tick_copy(void) {
   safety.safety_mode_cnt += 1U;
 
   const uint8_t MAX_MISSED_MSGS = 10U;
-  const uint32_t RX_TRNS_TIMEOUT = 1U;
   bool rx_checks_invalid = false;
   uint32_t ts = safety_ts;
   for (int i=0; i < safety_setup.current_safety_config.rx_checks_len; i++) {
@@ -289,7 +291,7 @@ static void tick_copy(void) {
       safety.controls_allowed = false;
       // a mode change resets every check and the first tick can land before a slow message's first
       // frame: like the relay check, report one not seen yet only after 1s of transition
-      if (status->msg_seen || (safety.safety_mode_cnt > RX_TRNS_TIMEOUT)) {
+      if (status->msg_seen || (safety.safety_mode_cnt > RELAY_TRNS_TIMEOUT)) {
         rx_checks_invalid = true;
       }
     }
@@ -340,9 +342,6 @@ static void generic_rx_checks(void) {
 }
 
 static void stock_ecu_check(bool stock_ecu_detected) {
-  // allow 1s of transition timeout after relay changes state before assessing malfunctioning
-  const uint32_t RELAY_TRNS_TIMEOUT = 1U;
-
   // check if stock ECU is on bus broken by car harness
   if ((safety.safety_mode_cnt > RELAY_TRNS_TIMEOUT) && stock_ecu_detected) {
     relay_malfunction_set();
