@@ -603,7 +603,7 @@ class TestMazdaMainOnMads(MazdaTjaButtonBase):
   def _expire_lateral(self):
     self.safety.set_heartbeat_engaged_mads(False)
     for _ in range(3):
-      self.safety.safety_heartbeat_check()
+      self.safety.mads_heartbeat_check()
     self.assertFalse(self.safety.get_controls_allowed_lateral())
 
   def test_on_rearms_standby_without_engaging_cruise(self):
