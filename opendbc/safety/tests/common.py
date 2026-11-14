@@ -1007,8 +1007,6 @@ class SafetyTest(SafetyTestBase):
               continue
             if attr.startswith('TestHyundaiCanfd') and current_test.startswith('TestHyundaiCanfd'):
               continue
-            if attr.startswith('TestMazda') and current_test.startswith('TestMazda'):
-              continue
             if {attr, current_test}.issubset({'TestHyundaiLongitudinalSafety', 'TestHyundaiLongitudinalSafetyCameraSCC', 'TestHyundaiSafetyFCEVLong'}):
               continue
             base_tests = {'TestHyundaiLongitudinalSafety', 'TestHyundaiLongitudinalSafetyCameraSCC', 'TestHyundaiSafetyFCEVLong',
@@ -1024,6 +1022,10 @@ class SafetyTest(SafetyTestBase):
               tx = list(filter(lambda m: m[0] not in [0x160, ], tx))
             if attr.startswith('TestHyundaiCanfdLFASteeringCCNC') and current_test.startswith('TestSubaruPreglobal'):
               tx = list(filter(lambda m: m[0] not in [0x161, ], tx))
+
+            # the Mazda modes share the steering, HUD and button messages
+            if attr.startswith('TestMazda') and current_test.startswith('TestMazda'):
+              tx = list(filter(lambda m: m[0] not in [0x243, 0x440, 0x09d], tx))
 
             # Volkswagen MQB longitudinal actuating message overlaps with the Subaru lateral actuating message
             if attr == 'TestVolkswagenMqbLongSafety' and current_test.startswith('TestSubaru'):
