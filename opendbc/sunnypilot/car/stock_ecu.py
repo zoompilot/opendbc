@@ -37,3 +37,7 @@ ENGAGES_NORMALLY = frozenset({StockEcuState.NOT_NEEDED, StockEcuState.READY, Sto
 # States in which nothing stock stands between openpilot longitudinal and the car. In any other
 # the car is a lateral-only one to the driver: no following distance to show or change.
 OWNED = frozenset({StockEcuState.NOT_NEEDED, StockEcuState.READY})
+
+# Brands whose openpilot longitudinal starts every drive with a takeover: before the car's first
+# report (offroad, the first seconds onroad) the state is known to be not yet owned.
+TAKEOVER_BRANDS = frozenset({"mazda"})
