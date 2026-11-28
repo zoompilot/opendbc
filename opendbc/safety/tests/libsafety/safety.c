@@ -384,6 +384,14 @@ void mads_heartbeat_check(void){
   SAFETY_RUN(mads_heartbeat_engaged_check());
 }
 
+void set_heartbeat_engaged_mismatches(uint32_t c){
+  SAFETY_SET(heartbeat_engaged_mismatches, c);
+}
+
+uint32_t get_heartbeat_engaged_mismatches(void){
+  return safety.heartbeat_engaged_mismatches;
+}
+
 void set_steering_disengage(bool c){
   SAFETY_SET(steering_disengage, c);
 }
