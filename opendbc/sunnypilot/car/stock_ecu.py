@@ -33,3 +33,7 @@ class StockEcuState(StrEnum):
 
 # States in which a SET/RES press engages as on a stock car: nothing to explain to the driver.
 ENGAGES_NORMALLY = frozenset({StockEcuState.NOT_NEEDED, StockEcuState.READY, StockEcuState.RESTORED})
+
+# States in which nothing stock stands between openpilot longitudinal and the car. In any other
+# the car is a lateral-only one to the driver: no following distance to show or change.
+OWNED = frozenset({StockEcuState.NOT_NEEDED, StockEcuState.READY})
