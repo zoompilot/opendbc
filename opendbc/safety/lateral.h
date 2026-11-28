@@ -1,8 +1,8 @@
 #ifndef SAFETY_LATERAL_H
 #define SAFETY_LATERAL_H
 
-#include "opendbc/safety/sunnypilot/mads.h"
 #include "opendbc/safety/declarations.h"
+#include "opendbc/safety/sunnypilot/mads.h"
 
 static uint32_t safety_ts;
 
@@ -110,7 +110,6 @@ static bool steer_torque_cmd_checks(int desired_torque, bool steer_req, const To
   }
 
   bool torque_requested = desired_torque != 0;
-  // no torque if controls is not allowed
   if (!(safety.controls_allowed || safety.controls_allowed_lateral) && torque_requested) {
     violation = true;
   }
@@ -223,12 +222,11 @@ static bool steer_angle_cmd_common_checks(bool limit_violation, int desired_angl
   const bool inactive_angle_violation = !steer_control_enabled && steer_angle_cmd_inactive_check(desired_angle, max_angle);
 
   // No angle control allowed when controls are not allowed
-  const bool lateral_allowed = safety.controls_allowed || safety.controls_allowed_lateral;
-  const bool controls_violation = !lateral_allowed && steer_control_enabled;
+  const bool controls_violation = !(safety.controls_allowed || safety.controls_allowed_lateral) && steer_control_enabled;
   const bool violation = limit_violation || inactive_angle_violation || controls_violation;
 
   // reset to current angle if either controls is not allowed or there's a violation
-  if (violation || !lateral_allowed) {
+  if (violation || !(safety.controls_allowed || safety.controls_allowed_lateral)) {
     safety.desired_angle_last = safety_clamp_int(safety.angle_meas.values[0], -max_angle, max_angle);
   }
 

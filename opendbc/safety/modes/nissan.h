@@ -19,6 +19,7 @@
 #define NISSAN_PRO_PILOT_RX_CHECKS(alt_eps_bus)                                                                                                      \
   {.msg = {{0x1B6, alt_eps_bus, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
 
+
 static const AngleSteeringLimits NISSAN_STEERING_LIMITS = {
   .max_angle = 60000,  // 600 deg, reasonable limit
   .angle_deg_to_can = 100.0f,

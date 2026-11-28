@@ -16,7 +16,7 @@
     call; \
     current_copy = &safety_a; \
     call; \
-  } while (0)
+  } while (false)
 
 // TODO: time should just be passed into the hooks we expose
 uint32_t timer_cnt = 0;
@@ -50,10 +50,6 @@ bool safety_config_valid() {
 
 int get_rx_checks_len(void) {
   return safety_setup.current_safety_config.rx_checks_len;
-}
-
-int get_rx_check_frequency(int i) {
-  return safety_setup.current_safety_config.rx_checks[i].msg[safety.rx_status[i].index].frequency;
 }
 
 // all RX checks valid, check stale last received age us ago
@@ -100,7 +96,7 @@ void set_unseen_rx_checks_valid(void){
 int get_ignore_frequency_check_count(void){
   int count = 0;
   for (int i = 0; i < safety_setup.current_safety_config.rx_checks_len; i++) {
-    for (uint8_t j = 0U; (j < MAX_ADDR_CHECK_MSGS) && (safety_setup.current_safety_config.rx_checks[i].msg[j].addr != 0); j++) {
+    for (uint8_t j = 0U; (j < MAX_ADDR_CHECK_MSGS) && (safety_setup.current_safety_config.rx_checks[i].msg[j].addr != 0U); j++) {
       if (safety_setup.current_safety_config.rx_checks[i].msg[j].ignore_frequency_check) {
         count++;
       }
@@ -112,9 +108,9 @@ int get_ignore_frequency_check_count(void){
 bool get_rx_check_ignore_frequency(int addr, int bus){
   bool ignore = false;
   for (int i = 0; i < safety_setup.current_safety_config.rx_checks_len; i++) {
-    for (uint8_t j = 0U; (j < MAX_ADDR_CHECK_MSGS) && (safety_setup.current_safety_config.rx_checks[i].msg[j].addr != 0); j++) {
+    for (uint8_t j = 0U; (j < MAX_ADDR_CHECK_MSGS) && (safety_setup.current_safety_config.rx_checks[i].msg[j].addr != 0U); j++) {
       const CanMsgCheck *msg = &safety_setup.current_safety_config.rx_checks[i].msg[j];
-      if ((msg->addr == addr) && ((int)msg->bus == bus) && msg->ignore_frequency_check) {
+      if (((int)msg->addr == addr) && ((int)msg->bus == bus) && msg->ignore_frequency_check) {
         ignore = true;
       }
     }
@@ -326,6 +322,10 @@ void set_current_safety_param_sp(uint16_t param){
   safety_param_sp(param);
 }
 
+uint32_t get_acc_main_on_mismatches(void) {
+  return safety.hyundai_acc_main_on_mismatches;
+}
+
 uint16_t get_current_safety_param_sp(void){
   return safety_setup.current_safety_param_sp;
 }
@@ -400,7 +400,7 @@ int get_gas_interceptor_prev(void){
   return safety.gas_interceptor_prev;
 }
 
-// leaves junk on the stack for the next call
+// a deeper frame of junk on the stack the next call at this depth reuses
 void dirty_stack(void){
   volatile uint8_t junk[4096];
   for (int i = 0; i < 4096; i++) {

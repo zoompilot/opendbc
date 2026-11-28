@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from opendbc.sunnypilot.car.hyundai.values import HyundaiSafetyFlagsSP
+
 import opendbc.safety.tests.common as common
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -82,6 +83,7 @@ class HyundaiLongitudinalBase(common.LongitudinalAccelSafetyTest):
   DISABLED_ECU_UDS_MSG: tuple[int, int]
 
   _button_msg: Callable[..., libsafety_py.CANPacket]
+  _main_cruise_button_msg: Callable[..., libsafety_py.CANPacket]
 
   # override these tests from CarSafetyTest, hyundai longitudinal uses button enable
   def test_disable_control_allowed_from_cruise(self):
@@ -246,6 +248,10 @@ class HyundaiLongitudinalBase(common.LongitudinalAccelSafetyTest):
         # Second mismatch
         self._tx(self._tx_acc_state_msg(False))
         self.assertTrue(self.safety.get_acc_main_on())
+        self.assertEqual(2, self.safety.get_acc_main_on_mismatches())
+
+        # acc_main_on held, not a rising edge: no reset
+        self._rx(self._main_cruise_button_msg(0))
         self.assertEqual(2, self.safety.get_acc_main_on_mismatches())
 
         # Third mismatch should trigger disengagement

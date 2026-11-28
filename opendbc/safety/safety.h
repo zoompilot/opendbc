@@ -278,31 +278,23 @@ static int fwd_hook_copy(int bus_num, int addr) {
 static void tick_copy(void) {
   safety.safety_mode_cnt += 1U;
 
-  const uint32_t MAX_MISSED_MSGS = 10U;
   bool rx_checks_invalid = false;
   uint32_t ts = safety_ts;
   for (int i=0; i < safety_setup.current_safety_config.rx_checks_len; i++) {
     RxStatus *status = &safety.rx_status[i];
     uint32_t elapsed_time = safety_get_ts_elapsed(ts, status->last_timestamp);
-    // lag threshold is max of: 1s and MAX_MISSED_MSGS * expected timestep.
-    // Quite conservative to not risk false triggers.
-    // 2s of lag is worse case, since the function is called at 1Hz
-    const CanMsgCheck *m = &safety_setup.current_safety_config.rx_checks[i].msg[status->index];
-    // TestSafetyConfigs: never 0, and 10Hz or more unless the message sets ignore_frequency_check
-    uint32_t timestep = 1000000U / m->frequency;
-    uint32_t lag_limit = timestep * MAX_MISSED_MSGS;
-    if (lag_limit < 1000000U) {
-      lag_limit = 1000000U;
+    // lagging after 1s, at least 10 missed messages since RX checks are >= 10Hz (see TestSafetyConfigs)
+    // 2s of lag is worst case, since the function is called at 1Hz
+    const CanMsgCheck *msg_check = &safety_setup.current_safety_config.rx_checks[i].msg[status->index];
+    uint32_t lag_threshold = 1000000U;
+    if (msg_check->ignore_frequency_check) {
+      // 10 missed messages, over 1s since flagged checks are below 10Hz (see TestSafetyConfigs)
+      lag_threshold = 10U * (1000000U / msg_check->frequency);
     }
-    bool lagging = elapsed_time > lag_limit;
-    status->lagging = lagging;
-    if (lagging) {
+    status->lagging = elapsed_time > lag_threshold;
+    if (status->lagging || !is_msg_valid(i)) {
       exit_controls();
       mads_exit_controls(MADS_DISENGAGE_REASON_LAG);
-    }
-
-    if (lagging || !is_msg_valid(i)) {
-      exit_controls();
       // a mode change resets every check and the first tick can land before a slow message's first
       // frame: like the relay check, report one not seen yet only after 1s of transition
       if (status->msg_seen || (safety.safety_mode_cnt > RELAY_TRNS_TIMEOUT)) {
@@ -391,7 +383,7 @@ static const safety_hook_config safety_hook_registry[] = {
 };
 
 static int set_hooks_copy(uint16_t mode, uint16_t param) {
-  // MADS flags are set before the safety mode, like alternative_experience
+  // sunnypilot: the MADS flags are set before the safety mode, like the alternative experience
   const bool mads_enabled = safety.m_mads_state.system_enabled;
   const bool mads_disengage_lateral_on_brake = safety.m_mads_state.disengage_lateral_on_brake;
   const bool mads_pause_lateral_on_brake = safety.m_mads_state.pause_lateral_on_brake;
@@ -406,7 +398,6 @@ static int set_hooks_copy(uint16_t mode, uint16_t param) {
 
   mads_set_system_state(mads_enabled, mads_disengage_lateral_on_brake, mads_pause_lateral_on_brake);
 
-  // gas interceptor
   safety_setup.enable_gas_interceptor = false;
 
   safety_config cfg = {0};
@@ -482,19 +473,13 @@ void safety_alternative_experience(int alt_exp) {
   safety_b.setup.alternative_experience = alt_exp;
 }
 
-void safety_heartbeat_check(void) {
-  current_copy = &safety_b;
-  heartbeat_check_copy();
-  current_copy = &safety_a;
-  heartbeat_check_copy();
-}
-
 // set before set_safety_hooks, the safety mode's init reads it
 void safety_param_sp(uint16_t param_sp) {
   safety_a.setup.current_safety_param_sp = param_sp;
   safety_b.setup.current_safety_param_sp = param_sp;
 }
 
+// set after safety_alternative_experience, before set_safety_hooks
 void safety_mads_alternative_experience(void) {
   current_copy = &safety_b;
   mads_set_alternative_experience(&safety_setup.alternative_experience);
@@ -505,6 +490,13 @@ void safety_mads_alternative_experience(void) {
 void safety_heartbeat_mads(bool engaged_mads) {
   safety_a.state.heartbeat_engaged_mads = engaged_mads;
   safety_b.state.heartbeat_engaged_mads = engaged_mads;
+}
+
+void safety_heartbeat_check(void) {
+  current_copy = &safety_b;
+  heartbeat_check_copy();
+  current_copy = &safety_a;
+  heartbeat_check_copy();
 }
 
 int set_safety_hooks(uint16_t mode, uint16_t param) {

@@ -20,6 +20,7 @@
 #define GM_NON_ACC_ADDR_CHECK \
   {.msg = {{0x3D1, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}}, \
 
+#define GM_BTN_UNPRESS 1U
 #define GM_BTN_RESUME 2U
 #define GM_BTN_SET 3U
 #define GM_BTN_CANCEL 6U

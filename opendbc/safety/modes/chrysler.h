@@ -13,9 +13,9 @@
 #define CHRYSLER_DAS_6            0x2A6  // LKAS HUD and auto headlight control from DASM
 #define CHRYSLER_LKAS_COMMAND     0x292  // LKAS controls from DASM
 #define CHRYSLER_CRUISE_BUTTONS   0x23B  // Cruise control buttons
-#define CHRYSLER_CRUISE_BUTTONS_ALT  0x000  // Placeholder, does not exist
+#define CHRYSLER_CRUISE_BUTTONS_ALT  0x000U  // Placeholder, does not exist
 #define CHRYSLER_LKAS_HEARTBIT    0x2D9  // LKAS HEARTBIT from DASM
-#define CHRYSLER_TRACTION_BUTTON  0x330  // Traction control button
+#define CHRYSLER_TRACTION_BUTTON  0x330U // Traction control button
 #define CHRYSLER_Center_Stack_2   0x000  // Placeholder, does not exist
 
 // RAM DT addresses
@@ -27,10 +27,10 @@
 #define CHRYSLER_RAM_DT_DAS_6            0xFA
 #define CHRYSLER_RAM_DT_LKAS_COMMAND     0xA6
 #define CHRYSLER_RAM_DT_CRUISE_BUTTONS   0xB1
-#define CHRYSLER_RAM_DT_CRUISE_BUTTONS_ALT  0x00  // Placeholder, does not exist
+#define CHRYSLER_RAM_DT_CRUISE_BUTTONS_ALT  0x00U  // Placeholder, does not exist
 #define CHRYSLER_RAM_DT_LKAS_HEARTBIT    0x00  // Placeholder, does not exist
 #define CHRYSLER_RAM_DT_TRACTION_BUTTON  0x00  // Placeholder, does not exist
-#define CHRYSLER_RAM_DT_Center_Stack_2   0x28A
+#define CHRYSLER_RAM_DT_Center_Stack_2   0x28AU
 
 // RAM HD addresses
 #define CHRYSLER_RAM_HD_EPS_2            0x220
@@ -43,10 +43,10 @@
 #endif
 #define CHRYSLER_RAM_HD_LKAS_COMMAND     0x276
 #define CHRYSLER_RAM_HD_CRUISE_BUTTONS   0x23A
-#define CHRYSLER_RAM_HD_CRUISE_BUTTONS_ALT  0x23B  // Cruise control buttons for Ram HD alt buttons
+#define CHRYSLER_RAM_HD_CRUISE_BUTTONS_ALT  0x23BU  // Cruise control buttons for Ram HD alt buttons
 #define CHRYSLER_RAM_HD_LKAS_HEARTBIT    0x00  // Placeholder, does not exist
 #define CHRYSLER_RAM_HD_TRACTION_BUTTON  0x00  // Placeholder, does not exist
-#define CHRYSLER_RAM_HD_Center_Stack_2   0x28A
+#define CHRYSLER_RAM_HD_Center_Stack_2   0x28AU
 
 #ifdef ALLOW_DEBUG
 #define CHRYSLER_RAM_HD_COMMON_TX_MSGS                       \
@@ -63,8 +63,6 @@ typedef struct {
   uint32_t LKAS_COMMAND;
   uint32_t CRUISE_BUTTONS;
   uint32_t CRUISE_BUTTONS_ALT;
-  uint32_t TRACTION_BUTTON;
-  uint32_t Center_Stack_2;
 } ChryslerAddrs;
 
 static const ChryslerAddrs *chrysler_get_addrs(void) {
@@ -77,8 +75,6 @@ static const ChryslerAddrs *chrysler_get_addrs(void) {
     .LKAS_COMMAND = CHRYSLER_LKAS_COMMAND,
     .CRUISE_BUTTONS = CHRYSLER_CRUISE_BUTTONS,
     .CRUISE_BUTTONS_ALT = CHRYSLER_CRUISE_BUTTONS_ALT,
-    .TRACTION_BUTTON = CHRYSLER_TRACTION_BUTTON,
-    .Center_Stack_2 = CHRYSLER_Center_Stack_2,
   };
   static const ChryslerAddrs chrysler_ram_dt_addrs = {
     .EPS_2 = CHRYSLER_RAM_DT_EPS_2,
@@ -89,8 +85,6 @@ static const ChryslerAddrs *chrysler_get_addrs(void) {
     .LKAS_COMMAND = CHRYSLER_RAM_DT_LKAS_COMMAND,
     .CRUISE_BUTTONS = CHRYSLER_RAM_DT_CRUISE_BUTTONS,
     .CRUISE_BUTTONS_ALT = CHRYSLER_RAM_DT_CRUISE_BUTTONS_ALT,
-    .TRACTION_BUTTON = CHRYSLER_RAM_DT_TRACTION_BUTTON,
-    .Center_Stack_2 = CHRYSLER_RAM_DT_Center_Stack_2,
   };
   static const ChryslerAddrs chrysler_ram_hd_addrs = {
     .EPS_2 = CHRYSLER_RAM_HD_EPS_2,
@@ -101,8 +95,6 @@ static const ChryslerAddrs *chrysler_get_addrs(void) {
     .LKAS_COMMAND = CHRYSLER_RAM_HD_LKAS_COMMAND,
     .CRUISE_BUTTONS = CHRYSLER_RAM_HD_CRUISE_BUTTONS,
     .CRUISE_BUTTONS_ALT = CHRYSLER_RAM_HD_CRUISE_BUTTONS_ALT,
-    .TRACTION_BUTTON = CHRYSLER_RAM_HD_TRACTION_BUTTON,
-    .Center_Stack_2 = CHRYSLER_RAM_HD_Center_Stack_2,
   };
   return (safety_setup.chrysler_platform == CHRYSLER_RAM_DT) ? &chrysler_ram_dt_addrs :
          ((safety_setup.chrysler_platform == CHRYSLER_RAM_HD) ? &chrysler_ram_hd_addrs : &chrysler_addrs);
@@ -148,12 +140,12 @@ static void chrysler_rx_hook(const CANPacket_t *msg) {
     safety.brake_pressed = ((msg->data[0U] & 0xFU) >> 2U) == 1U;
   }
 
-  if ((safety_setup.chrysler_platform == CHRYSLER_PACIFICA) && msg_matches(msg, chrysler_get_addrs()->TRACTION_BUTTON, 0U)) {
+  if ((safety_setup.chrysler_platform == CHRYSLER_PACIFICA) && msg_matches(msg, CHRYSLER_TRACTION_BUTTON, 0U)) {
     safety.mads_button_press = GET_BIT(msg, 53U) ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
   }
 
   if ((safety_setup.chrysler_platform != CHRYSLER_PACIFICA) && (msg->bus == 0U)) {
-    if (msg->addr == chrysler_get_addrs()->Center_Stack_2) {
+    if (msg->addr == CHRYSLER_RAM_DT_Center_Stack_2) {
       safety.mads_button_press = GET_BIT(msg, 57U) ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
     }
   }

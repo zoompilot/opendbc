@@ -60,7 +60,6 @@ static uint32_t honda_compute_checksum(const CANPacket_t *msg) {
 }
 
 static uint8_t honda_get_counter(const CANPacket_t *msg) {
-  // the gas interceptor (0x201) check ignores its counter
   uint32_t counter_byte = GET_LEN(msg) - 1U;
   return (msg->data[counter_byte] >> 4U) & 0x3U;
 }
@@ -159,10 +158,8 @@ static void honda_rx_hook(const CANPacket_t *msg) {
     // If thresholds are mismatched then it is possible for panda to see the gas fall and rise while openpilot is in the pre-enabled state
     // Threshold calculated from DBC gains: round(((83.3 / 0.253984064) + (83.3 / 0.126992032)) / 2) = 492
     const int honda_gas_interceptor_thrsld = 492;
-
     int gas_interceptor = HONDA_GET_INTERCEPTOR(msg);
     safety.gas_pressed = gas_interceptor > honda_gas_interceptor_thrsld;
-
     safety.gas_interceptor_prev = gas_interceptor;
   }
 
@@ -177,11 +174,9 @@ static void honda_rx_hook(const CANPacket_t *msg) {
     uint32_t honda_stock_brake = GET_BYTES_BE(msg, 0, 2) >> 6;
 
     if (safety_setup.honda_nidec_hybrid) {
-      honda_stock_brake = GET_BYTES_BE(msg, 6, 2) >> 6;
+      honda_stock_brake = (msg->data[6] << 2) | (msg->data[7] >> 6);
     }
 
-    // Forward AEB when stock braking is higher than openpilot braking
-    // only stop forwarding when AEB event is over
     safety.honda_fwd_brake = honda_stock_aeb && (safety.honda_fwd_brake || (honda_stock_brake >= safety.honda_brake));
   }
 }
@@ -223,11 +218,9 @@ static bool honda_tx_hook(const CANPacket_t *msg) {
   // BRAKE: safety check (nidec)
   if (msg_matches(msg, 0x1FAU, bus_pt)) {
     safety.honda_brake = GET_BYTES_BE(msg, 0, 2) >> 6;
-
     if (safety_setup.honda_nidec_hybrid) {
-      safety.honda_brake = GET_BYTES_BE(msg, 6, 2) >> 6;
+      safety.honda_brake = (msg->data[6] << 2) | (msg->data[7] >> 6);
     }
-
     if (longitudinal_brake_checks((int)safety.honda_brake, HONDA_NIDEC_LONG_LIMITS)) {
       tx = false;
     }

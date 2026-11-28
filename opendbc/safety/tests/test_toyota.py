@@ -36,19 +36,20 @@ class TestToyotaSafetyBase(common.CarSafetyTest, common.LongitudinalAccelSafetyT
   EPS_SCALE = 73
   ECU_DISABLED = True  # radar is knocked out with tester present for openpilot longitudinal
 
+  RX_QUALITY_FLAGS = {
+    "WHEEL_SPEEDS": {f"WHEEL_SPEED_{wheel}_FAULT": (0,) for wheel in ("FR", "FL", "RR", "RL")},
+    "STEER_TORQUE_SENSOR": {"STEER_ANGLE_INITIALIZING": (0,)},
+  }
+
   SAFETY_PARAM_SP: int = 0
 
   def setUp(self):
+    self._safety_param_sp = self.SAFETY_PARAM_SP
     libsafety_py.libsafety.set_current_safety_param_sp(self.SAFETY_PARAM_SP)
     super().setUp()
 
   packer: CANPackerSafety
   safety: libsafety_py.LibSafety
-
-  RX_QUALITY_FLAGS = {
-    "WHEEL_SPEEDS": {f"WHEEL_SPEED_{wheel}_FAULT": (0,) for wheel in ("FR", "FL", "RR", "RL")},
-    "STEER_TORQUE_SENSOR": {"STEER_ANGLE_INITIALIZING": (0,)},
-  }
 
   def _torque_meas_msg(self, torque: int, driver_torque: int | None = None):
     values = {"STEER_TORQUE_EPS": (torque / self.EPS_SCALE) * 100.}
@@ -153,15 +154,15 @@ class TestToyotaSafetyGasInterceptorBase(GasInterceptorSafetyTest, TestToyotaSaf
 
   TX_MSGS = TOYOTA_COMMON_TX_MSGS + TOYOTA_COMMON_LONG_TX_MSGS + GAS_INTERCEPTOR_TX_MSGS
   INTERCEPTOR_THRESHOLD = 805
+  GAS_PRESSED_THRESHOLD = 805
 
   def setUp(self):
     super().setUp()
     self.safety = libsafety_py.libsafety
-    self.safety.set_current_safety_param_sp(self.SAFETY_PARAM_SP | ToyotaSafetyFlagsSP.GAS_INTERCEPTOR)
+    self._safety_param_sp = self.SAFETY_PARAM_SP | ToyotaSafetyFlagsSP.GAS_INTERCEPTOR
+    self.safety.set_current_safety_param_sp(self._safety_param_sp)
     self.safety.set_safety_hooks(CarParams.SafetyModel.toyota, self.safety.get_current_safety_param())
     self.safety.init_tests()
-    # init_tests clears the param
-    self.safety.set_current_safety_param_sp(self.SAFETY_PARAM_SP | ToyotaSafetyFlagsSP.GAS_INTERCEPTOR)
 
   def test_stock_longitudinal(self):
     # If stock longitudinal is set, the gas interceptor safety param should not be respected
@@ -198,26 +199,22 @@ class TestToyotaSafetyTorque(TestToyotaSafetyBase, common.MotorTorqueSteeringSaf
   @classmethod
   def setUpClass(cls):
     if cls.__name__ == "TestToyotaSafetyTorque":
-      cls.safety = None
       raise unittest.SkipTest
-
-  def setUp(self):
-    super().setUp()
-    self.safety.set_current_safety_param_sp(self.SAFETY_PARAM_SP)
 
   def test_steer_angle_initializing_ignored(self):
     # TSS-P cars don't set STEER_ANGLE_INITIALIZING, so torque control doesn't check it
     for steer_angle_initializing in (True, False):
       self.assertTrue(self._rx(self._angle_meas_msg(0, steer_angle_initializing)))
 
-
+  def setUp(self):
+    super().setUp()
+    self.safety.set_current_safety_param_sp(self.SAFETY_PARAM_SP)
 @parameterized_class(UNSUPPORTED_DSU)
 class TestToyotaSafetyTorqueGasInterceptor(TestToyotaSafetyGasInterceptorBase, TestToyotaSafetyTorque):
 
   @classmethod
   def setUpClass(cls):
     if cls.__name__ == "TestToyotaSafetyTorqueGasInterceptor":
-      cls.safety = None
       raise unittest.SkipTest
 class TestToyotaSafetyAngle(TestToyotaSafetyBase, common.AngleSteeringSafetyTest):
 
@@ -343,7 +340,6 @@ class TestToyotaAltBrakeSafety(TestToyotaSafetyTorque):
   @classmethod
   def setUpClass(cls):
     if cls.__name__ == "TestToyotaAltBrakeSafety":
-      cls.safety = None
       raise unittest.SkipTest
 
   def setUp(self):
@@ -352,13 +348,14 @@ class TestToyotaAltBrakeSafety(TestToyotaSafetyTorque):
 
   def test_lta_steer_cmd(self):
     self.skipTest("new_mc DBC has no STEERING_LTA")
+
+
 @parameterized_class(UNSUPPORTED_DSU)
 class TestToyotaAltBrakeSafetyGasInterceptor(TestToyotaSafetyGasInterceptorBase, TestToyotaAltBrakeSafety):
 
   @classmethod
   def setUpClass(cls):
     if cls.__name__ == "TestToyotaAltBrakeSafetyGasInterceptor":
-      cls.safety = None
       raise unittest.SkipTest
 
   # No LTA message in the DBC
@@ -393,7 +390,6 @@ class TestToyotaStockLongitudinalTorque(TestToyotaStockLongitudinalBase, TestToy
   @classmethod
   def setUpClass(cls):
     if cls.__name__ == "TestToyotaStockLongitudinalTorque":
-      cls.safety = None
       raise unittest.SkipTest
 
   def setUp(self):

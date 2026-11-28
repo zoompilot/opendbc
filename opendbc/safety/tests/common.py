@@ -93,11 +93,14 @@ class SafetyTestBase(unittest.TestCase):
   packer: CANPackerSafety
   SAFETY_MODEL: int | None
   SAFETY_PARAM = 0
+  _safety_param_sp = 0
 
   def setUp(self):
     self.safety = libsafety_py.libsafety
     if self.DBC is not None:
       self.packer = CANPackerSafety(self.DBC)
+    # sunnypilot: never inherit the previous class's sunnypilot safety param
+    self.safety.set_current_safety_param_sp(self._safety_param_sp)
     if self.SAFETY_MODEL is not None:
       self.safety.set_safety_hooks(self.SAFETY_MODEL, self.SAFETY_PARAM)
     self.safety.init_tests()
@@ -113,6 +116,7 @@ class SafetyTestBase(unittest.TestCase):
       raise unittest.SkipTest
 
   def _reset_safety_hooks(self):
+    self.safety.set_current_safety_param_sp(self._safety_param_sp)
     self.safety.set_safety_hooks(self.safety.get_current_safety_mode(),
                                  self.safety.get_current_safety_param())
 
@@ -1574,8 +1578,7 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase, RxChecksSafetyTestBase):
         self.safety.set_controls_allowed_lateral(True)
         self.safety.safety_tick()
         self.assertFalse(self.safety.get_controls_allowed())
-        # MADS leaves lateral only on lag
-        self.assertEqual(self.safety.get_controls_allowed_lateral(), elapsed == 0)
+        self.assertFalse(self.safety.get_controls_allowed_lateral())
         self.assertFalse(self.safety.safety_config_valid())
         self.assertTrue(self.safety.get_safety_rx_checks_invalid())
 
@@ -1600,11 +1603,13 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase, RxChecksSafetyTestBase):
           self.assertEqual(self.safety.get_safety_rx_checks_invalid(), seen or mode_cnt > 0)
 
   def test_rx_lagging(self):
-    # a check lags after 10 missed messages or 1 s, whichever is longer. checks are at least 10 Hz, so it is always 1 s
-    # except ignore_frequency_check checks, which can be slower
+    # a check lags after 10 missed messages or 1 s, whichever is longer. checks are at least 10 Hz, so it is 1 s
+    # unless the check skips the 10 Hz minimum
+    cfg = libsafety_py.libsafety.safety_a.setup.current_safety_config
     self.assertGreater(self.safety.get_rx_checks_len(), 0)
     for stale in range(self.safety.get_rx_checks_len()):
-      lag_us = max(10 * (1000000 // self.safety.get_rx_check_frequency(stale)), 1000000)
+      m = cfg.rx_checks[stale].msg[0]
+      lag_us = 10 * (1000000 // m.frequency) if m.ignore_frequency_check else 1000000
       for age, allowed in ((lag_us, True), (lag_us + 1, False)):
         with self.subTest(stale=stale, age=age):
           self._reset_safety_hooks()

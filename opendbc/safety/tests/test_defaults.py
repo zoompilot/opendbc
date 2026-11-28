@@ -15,19 +15,13 @@ class TestDefaultRxHookBase(common.SafetyTest):
     for bus in range(4):
       for addr in self.SCANNED_ADDRS:
         self.assertTrue(self._rx(common.make_msg(bus, addr, 8)), f"failed RX {addr=}")
-
-
 class TestNoOutput(TestDefaultRxHookBase):
   SAFETY_MODEL = CarParams.SafetyModel.noOutput
 
   TX_MSGS = []
-
-
 class TestSilent(TestNoOutput):
   """SILENT uses same hooks as NOOUTPUT"""
   SAFETY_MODEL = CarParams.SafetyModel.silent
-
-
 class TestAllOutput(TestDefaultRxHookBase):
   SAFETY_MODEL = CarParams.SafetyModel.allOutput
 
@@ -49,15 +43,11 @@ class TestAllOutput(TestDefaultRxHookBase):
   def test_tx_hook_on_wrong_safety_mode(self):
     # No point, since we allow all messages
     pass
-
-
 class TestAllOutputPassthrough(TestAllOutput):
   SAFETY_PARAM = 1
 
   FWD_BLACKLISTED_ADDRS = {}
   FWD_BUS_LOOKUP = {0: 2, 2: 0}
-
-
 class TestSafetyFramework(common.SafetyTestBase):
   SAFETY_MODEL = CarParams.SafetyModel.noOutput
 
@@ -68,7 +58,7 @@ class TestSafetyFramework(common.SafetyTestBase):
     self.assertFalse(self.safety.safety_tx_hook(common.make_msg(0, 0x123)))
 
 
-class SafetyRedundancyBase(common.SafetyTestBase):
+class TestSafetyRedundancy(common.SafetyTestBase):
   SAFETY_MODEL = CarParams.SafetyModel.allOutput
 
   def _flip_b(self, bit):
@@ -80,8 +70,46 @@ class SafetyRedundancyBase(common.SafetyTestBase):
     self.assertEqual(common.state_buffer("safety_a")[:], common.state_buffer("safety_b")[:])
     self.safety.safety_redundancy_fault = False
 
+  @staticmethod
+  def _padding_masks(ctype):
+    # byte offset: the bits of it no field covers, including MADSState's unused bitfield bits
+    used = bytearray(ffi.sizeof(ctype))
 
-class TestSafetyRedundancy(SafetyRedundancyBase):
+    def mark(t, base):
+      if t.kind == "struct":
+        for _, f in t.fields:
+          if f.bitsize >= 0:
+            for bit in range(f.bitshift, f.bitshift + f.bitsize):
+              used[base + f.offset + bit // 8] |= 1 << (bit % 8)
+          else:
+            mark(f.type, base + f.offset)
+      elif t.kind == "array":
+        for i in range(t.length):
+          mark(t.item, base + i * ffi.sizeof(t.item))
+      else:
+        used[base:base + ffi.sizeof(t)] = b"\xff" * ffi.sizeof(t)
+
+    mark(ffi.typeof(ctype), 0)
+    return {i: ~u & 0xFF for i, u in enumerate(used) if u != 0xFF}
+
+  def test_mode_change_clears_padding(self):
+    # the copies are compared by byte, so a mode change must leave the same padding in both,
+    # whatever the stack and the padding held before
+    padding = self._padding_masks("SafetyState")
+    self.assertGreater(len(padding), 0)
+    state = ffi.offsetof("SafetyCopy", "state")
+    for copy, junk in (("safety_a", 0x5A), ("safety_b", 0xA5)):
+      buf = common.state_buffer(copy)
+      for i, mask in padding.items():
+        buf[state + i] = bytes([(buf[state + i][0] & ~mask) | (junk & mask)])
+
+    self.assertEqual(0, self.safety.set_safety_hooks_dirty_stack(CarParams.SafetyModel.hyundai, 0))
+    for copy in ("safety_a", "safety_b"):
+      buf = common.state_buffer(copy)
+      self.assertEqual({}, {i: buf[state + i][0] & mask for i, mask in padding.items() if buf[state + i][0] & mask})
+    self.safety.safety_tick()
+    self.assertFalse(self.safety.safety_redundancy_fault)
+
   def test_rx_decision_mismatch(self):
     # wrong counters in B fail its rx check, CLU11 is a hyundai rx check with a counter and no checksum
     self.safety.set_safety_hooks(CarParams.SafetyModel.hyundai, 0)
@@ -132,8 +160,7 @@ class TestSafetyRedundancy(SafetyRedundancyBase):
         self.safety.safety_tx_hook(msg)
         self.assertEqual(ts_last(self.safety.safety_a.state), 1000002)
 
-
-class TestSafetyRedundancySP(SafetyRedundancyBase):
+  # sunnypilot
   def test_mads_lateral_decision_mismatch(self):
     # steering is allowed only with controls_allowed_lateral
     self.safety.set_safety_hooks(CarParams.SafetyModel.hyundai, 0)
@@ -156,55 +183,16 @@ class TestSafetyRedundancySP(SafetyRedundancyBase):
     self.assertFalse(self.safety.get_controls_allowed_lateral())
     self.assertFalse(self.safety.safety_redundancy_fault)
 
-  @staticmethod
-  def _padding_masks(ctype):
-    # {byte offset: padding bits}, including unused bitfield bits
-    used = bytearray(ffi.sizeof(ctype))
-
-    def mark(t, base):
-      if t.kind == "struct":
-        for _, f in t.fields:
-          if f.bitsize >= 0:
-            for bit in range(f.bitshift, f.bitshift + f.bitsize):
-              used[base + f.offset + bit // 8] |= 1 << (bit % 8)
-          else:
-            mark(f.type, base + f.offset)
-      elif t.kind == "array":
-        for i in range(t.length):
-          mark(t.item, base + i * ffi.sizeof(t.item))
-      else:
-        used[base:base + ffi.sizeof(t)] = b"\xff" * ffi.sizeof(t)
-
-    mark(ffi.typeof(ctype), 0)
-    return {i: ~u & 0xFF for i, u in enumerate(used) if u != 0xFF}
-
-  def test_mode_change_clears_padding(self):
-    # the copies are compared by byte, so padding must match after a mode change
-    padding = self._padding_masks("SafetyState")
-    self.assertGreater(len(padding), 0)
-    state = ffi.offsetof("SafetyCopy", "state")
-    for copy, junk in (("safety_a", 0x5A), ("safety_b", 0xA5)):
-      buf = common.state_buffer(copy)
-      for i, mask in padding.items():
-        buf[state + i] = bytes([(buf[state + i][0] & ~mask) | (junk & mask)])
-
-    self.assertEqual(0, self.safety.set_safety_hooks_dirty_stack(CarParams.SafetyModel.hyundai, 0))
-    for copy in ("safety_a", "safety_b"):
-      buf = common.state_buffer(copy)
-      self.assertEqual({}, {i: buf[state + i][0] & mask for i, mask in padding.items() if buf[state + i][0] & mask})
-    self.safety.safety_tick()
-    self.assertFalse(self.safety.safety_redundancy_fault)
-
   def test_init_tests_clears_fault(self):
     self.safety.safety_redundancy_fault = True
     self.safety.init_tests()
     self.assertFalse(self.safety.safety_redundancy_fault)
 
-
 class TestMadsModeChange(common.SafetyTestBase):
   SAFETY_MODEL = CarParams.SafetyModel.noOutput
 
   def test_mads_flags_kept_across_mode_change(self):
+    # the MADS flags are set before the car safety mode, like the alternative experience
     for disengage_lateral_on_brake, pause_lateral_on_brake in ((True, False), (False, True)):
       with self.subTest(disengage_lateral_on_brake=disengage_lateral_on_brake):
         self.safety.set_mads_params(True, disengage_lateral_on_brake, pause_lateral_on_brake)
@@ -213,12 +201,13 @@ class TestMadsModeChange(common.SafetyTestBase):
         self.assertEqual(disengage_lateral_on_brake, self.safety.get_disengage_lateral_on_brake())
         self.assertEqual(pause_lateral_on_brake, self.safety.get_pause_lateral_on_brake())
 
+        # and lateral engages on the next rising edge
         self.safety.tick_mads_state(False, False, False, False, False)
         self.safety.tick_mads_state(False, True, False, False, False)
         self.assertTrue(self.safety.get_controls_allowed_lateral())
 
   def test_mads_state_reset_on_mode_change(self):
-    # including into SILENT, which the panda enters when the heartbeat is lost
+    # like controls_allowed, including into SILENT when the heartbeat is lost
     for mode in (CarParams.SafetyModel.hyundai, CarParams.SafetyModel.silent):
       with self.subTest(mode=mode):
         self.safety.set_mads_params(True, False, False)
@@ -239,7 +228,7 @@ class TestMadsModeChange(common.SafetyTestBase):
         self.assertFalse(self.safety.get_mads_acc_main())
         self.assertEqual(0, self.safety.mads_get_current_disengage_reason())
         self.assertEqual(0, self.safety.safety_a.state.heartbeat_engaged_mads_mismatches)
-        # kept, like heartbeat_engaged
+        # the heartbeat's input, like heartbeat_engaged
         self.assertTrue(self.safety.safety_a.state.heartbeat_engaged_mads)
 
 
@@ -292,9 +281,10 @@ class TestSafetyConfigs(unittest.TestCase):
           continue
         configs.add(cfg.rx_checks)
         for m in (m for i in range(cfg.rx_checks_len) for m in cfg.rx_checks[i].msg if m.addr != 0):
-          # sunnypilot: slow button messages opt out, tick_copy scales their lag threshold
-          self.assertGreaterEqual(m.frequency, 1 if m.ignore_frequency_check else 10,
-                                  f"{mode=} {m.addr=:#x}: 10Hz minimum for safety signals, tick_copy divides by it")
+          if m.ignore_frequency_check:
+            self.assertTrue(1 <= m.frequency < 10, f"{mode=} {m.addr=:#x}: frequency check only skipped below 10Hz")
+          else:
+            self.assertGreaterEqual(m.frequency, 10, f"{mode=} {m.addr=:#x}: 10Hz minimum for safety signals")
           self.assertTrue(m.ignore_checksum or (hooks.get_checksum != ffi.NULL and hooks.compute_checksum != ffi.NULL))
           self.assertEqual(m.ignore_counter, m.max_counter == 0)
           self.assertTrue(m.ignore_counter or hooks.get_counter != ffi.NULL)

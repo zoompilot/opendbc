@@ -192,7 +192,7 @@ typedef struct {
   const bool ignore_counter : 1;      // counter check is not performed when set to true
   const unsigned int max_counter : 8; // maximum value of the counter, nonzero exactly when the counter is checked
   const bool ignore_quality_flag : 1; // true if quality flag check is skipped
-  const bool ignore_frequency_check : 1; // true if minimum frequency enforcement is skipped
+  const bool ignore_frequency_check : 1; // true if the 10Hz minimum is skipped, lag threshold scales with frequency
 } CanMsgCheck;
 
 // dynamic state of an RX check, reset on safety mode init
@@ -334,6 +334,10 @@ typedef struct {
   bool honda_fwd_brake;
 
   uint8_t hyundai_last_button_interaction;  // button messages since the user pressed an enable button
+  bool hyundai_main_button_prev;
+  bool hyundai_acc_main_on_prev;
+  bool hyundai_acc_main_on_tx;
+  uint32_t hyundai_acc_main_on_mismatches;
 
   bool tesla_stock_aeb;
   // Only rising edges while controls are not allowed are considered for these systems:
@@ -352,17 +356,12 @@ typedef struct {
   // sunnypilot
   int gas_interceptor_prev;
 
-  // MADS
+  // MADS, see sunnypilot/mads.h
   ButtonState mads_button_press;
   MADSState m_mads_state;
   bool controls_allowed_lateral;
   bool heartbeat_engaged_mads;                 // MADS enabled, passed in heartbeat USB command
   uint32_t heartbeat_engaged_mads_mismatches;  // count of mismatches between heartbeat_engaged_mads and controls_allowed_lateral
-
-  bool hyundai_main_button_prev;
-  bool hyundai_acc_main_on_prev;
-  bool hyundai_acc_main_on_tx;
-  uint32_t hyundai_acc_main_on_mismatches;
 
   // zoompilot
   bool mazda_acc_armed;               // live cruise arming from PEDALS, both longitudinal modes (carstate mrcc_armed_raw)
@@ -434,7 +433,6 @@ typedef struct {
   bool subaru_stop_and_go;
 
   bool tesla_fsd_14;
-  bool tesla_has_vehicle_bus;
   uint8_t tesla_mads_screen_button_fingers;  // touch points for a MADS button press, 0 = disabled
 
   // zoompilot

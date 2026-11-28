@@ -132,6 +132,14 @@ class TestFordSafetyBase(common.CarSafetyTest):
     }
     return self.packer.make_can_msg_safety("EngBrakeData", 0, values)
 
+  def _lateral_steer_msg(self):
+    return self._lat_ctl_msg(True, 0, 0, 0, 0)
+
+  def test_acc_main_on_from_cruise_state(self):
+    for cruise_state in range(8):
+      self._rx(self.packer.make_can_msg_safety("EngBrakeData", 0, {"BpedDrvAppl_D_Actl": 1, "CcStat_D_Actl": cruise_state}))
+      self.assertEqual(cruise_state in (3, 4, 5), self.safety.get_acc_main_on(), cruise_state)
+
   def test_enable_control_allowed_from_queue_assist(self):
     msg = self.packer.make_can_msg_safety("EngBrakeData", 0, {"BpedDrvAppl_D_Actl": 1, "CcStat_D_Actl": 4})
     self.assertTrue(self._rx(msg))

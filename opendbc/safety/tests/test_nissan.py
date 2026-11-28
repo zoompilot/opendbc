@@ -113,7 +113,8 @@ class TestNissanLeafSafety(TestNissanSafety):
   def setUp(self):
     self.packer = CANPackerSafety("nissan_leaf_2018_generated")
     self.safety = libsafety_py.libsafety
-    self.safety.set_current_safety_param_sp(NissanSafetyFlagsSP.LEAF)
+    self._safety_param_sp = NissanSafetyFlagsSP.LEAF
+    self.safety.set_current_safety_param_sp(self._safety_param_sp)
     self.safety.set_safety_hooks(CarParams.SafetyModel.nissan, 0)
     self.safety.init_tests()
 

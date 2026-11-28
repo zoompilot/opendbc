@@ -162,7 +162,6 @@ static void hyundai_common_reset_acc_main_on_mismatches(void) {
   if (safety.acc_main_on && !safety.hyundai_acc_main_on_prev) {
     safety.hyundai_acc_main_on_mismatches = 0U;
   }
-
   safety.hyundai_acc_main_on_prev = safety.acc_main_on;
 }
 
@@ -171,17 +170,13 @@ static void hyundai_common_acc_main_on_sync(void) {
   if (safety.acc_main_on && !safety.hyundai_acc_main_on_tx) {
     safety.hyundai_acc_main_on_mismatches += 1U;
 
-    if (safety.hyundai_acc_main_on_mismatches >= 3U) {  // desync by 3 frames
+    if (safety.hyundai_acc_main_on_mismatches >= 3U) {
       safety.acc_main_on = false;
       mads_exit_controls(MADS_DISENGAGE_REASON_NON_PCM_ACC_MAIN_DESYNC);
     }
   } else {
     safety.hyundai_acc_main_on_mismatches = 0U;
   }
-}
-
-uint32_t get_acc_main_on_mismatches(void) {
-  return safety.hyundai_acc_main_on_mismatches;
 }
 
 #endif  // SAFETY_MODES_HYUNDAI_COMMON_H

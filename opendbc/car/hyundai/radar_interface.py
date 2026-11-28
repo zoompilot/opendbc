@@ -25,13 +25,11 @@ class RadarInterface(RadarInterfaceBase, RadarInterfaceExt):
   def __init__(self, CP, CP_SP):
     RadarInterfaceBase.__init__(self, CP, CP_SP)
     RadarInterfaceExt.__init__(self, CP, CP_SP)
+    self.rcp = None if CP.radarUnavailable else get_radar_can_parser(CP)
     self.trigger_msg = RADAR_START_ADDR + RADAR_MSG_COUNT - 1
 
-    self.rcp = get_radar_can_parser(CP)
     if self.rcp is None:
       self.initialize_radar_ext(self.trigger_msg)
-    if CP.radarUnavailable:
-      self.rcp = None
 
   def _update(self, rcp, updated_messages):
     ret = structs.RadarData()
@@ -39,7 +37,7 @@ class RadarInterface(RadarInterfaceBase, RadarInterfaceExt):
       ret.errors.canError = True
 
     if self.use_radar_interface_ext:
-      return self.update_ext(ret)
+      return self.update_ext(rcp, ret)
 
     for addr in range(RADAR_START_ADDR, RADAR_START_ADDR + RADAR_MSG_COUNT):
       msg = rcp.vl[f"RADAR_TRACK_{addr:x}"]

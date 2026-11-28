@@ -88,10 +88,6 @@ class TestHyundaiCanfdBase(hyundai_common.HyundaiButtonBase, common.CarSafetyTes
     values = {"MainMode_ACC": enable}
     return self.packer.make_can_msg_safety("SCC_CONTROL", self.SCC_BUS, values)
 
-  def _lkas_button_msg(self, enabled):
-    values = {"LDA_BTN": enabled}
-    return self.packer.make_can_msg_safety("CRUISE_BUTTONS", self.PT_BUS, values)
-
   def test_other_gas_msgs_ignored(self):
     # the gas messages share one RX slot, but only the configured one is parsed
     for msg, sig in (("ACCELERATOR", "ACCELERATOR_PEDAL"), ("ACCELERATOR_ALT", "ACCELERATOR_PEDAL"),
@@ -106,6 +102,10 @@ class TestHyundaiCanfdBase(hyundai_common.HyundaiButtonBase, common.CarSafetyTes
     # driver override is engaged
     self._rx(self.packer.make_can_msg_safety("SCC_CONTROL", self.SCC_BUS, {"ACCMode": 2}))
     self.assertTrue(self.safety.get_cruise_engaged_prev())
+
+  def _lkas_button_msg(self, enabled):
+    values = {"LDA_BTN": enabled}
+    return self.packer.make_can_msg_safety("CRUISE_BUTTONS", self.PT_BUS, values)
 
   def _main_cruise_button_msg(self, enabled):
     return self._button_msg(0, enabled)
@@ -190,9 +190,7 @@ class TestHyundaiCanfdLKASteeringEV(TestHyundaiCanfdBase):
 class TestHyundaiCanfdLKASteeringCCNCRadarSCC(TestHyundaiCanfdLKASteeringEV):
   """The CCNC flag frees the button message only on a camera SCC car with openpilot longitudinal"""
 
-  def setUp(self):
-    libsafety_py.libsafety.set_current_safety_param_sp(HyundaiSafetyFlagsSP.CCNC)
-    super().setUp()
+  _safety_param_sp = HyundaiSafetyFlagsSP.CCNC
 
 
 class TestHyundaiCanfdLKASteeringAltEV(TestHyundaiCanfdBase):
@@ -208,6 +206,9 @@ class TestHyundaiCanfdLKASteeringAltEV(TestHyundaiCanfdBase):
   STEER_MSG = "LKAS_ALT"
   GAS_MSG = ("ACCELERATOR", "ACCELERATOR_PEDAL")
 class HyundaiCanfdLKASteeringAltButtonsMixin:
+  packer: common.CANPackerSafety
+  PT_BUS: int
+
   def _button_msg(self, buttons, main_button=0, bus=None):
     values = {
       "CRUISE_BUTTONS": buttons,
@@ -318,7 +319,7 @@ class TestHyundaiCanfdLFASteeringLongAltButtons(TestHyundaiCanfdLFASteeringLongB
     pass
 
 
-CAMERA_SCC_COMBOS = [c for c in ALL_GAS_EV_HYBRID_COMBOS if c["EXTRA_SAFETY_PARAM"] & HyundaiSafetyFlags.CAMERA_SCC]
+CAMERA_SCC_COMBOS = [c for c in ALL_GAS_EV_HYBRID_COMBOS if c["SCC_BUS"] == 2]
 
 
 @parameterized_class(CAMERA_SCC_COMBOS)
@@ -332,11 +333,11 @@ class TestHyundaiCanfdLFASteeringCCNC(TestHyundaiCanfdLFASteeringBase):
   def setUpClass(cls):
     super().setUpClass()
     if cls.__name__ == "TestHyundaiCanfdLFASteeringCCNC":
-      cls.packer = None
       raise unittest.SkipTest
 
   def setUp(self):
-    libsafety_py.libsafety.set_current_safety_param_sp(HyundaiSafetyFlagsSP.CCNC)
+    self._safety_param_sp = HyundaiSafetyFlagsSP.CCNC
+    libsafety_py.libsafety.set_current_safety_param_sp(self._safety_param_sp)
     super().setUp()
 
   def tearDown(self):
@@ -358,7 +359,6 @@ class TestHyundaiCanfdLFASteeringCCNCLong(TestHyundaiCanfdLFASteeringLongBase, T
   def setUpClass(cls):
     super().setUpClass()
     if cls.__name__ == "TestHyundaiCanfdLFASteeringCCNCLong":
-      cls.packer = None
       raise unittest.SkipTest
 
   def test_button_sends(self):
@@ -366,6 +366,26 @@ class TestHyundaiCanfdLFASteeringCCNCLong(TestHyundaiCanfdLFASteeringLongBase, T
       for main_btn in (0, 1):
         self.assertTrue(self._tx(self._button_msg(btn, main_button=main_btn, bus=self.BUTTONS_TX_BUS)))
 
+
+RADAR_SCC_COMBOS = [c for c in ALL_GAS_EV_HYBRID_COMBOS if c["SCC_BUS"] == 0]
+
+
+@parameterized_class(RADAR_SCC_COMBOS)
+class TestHyundaiCanfdLFASteeringCCNCRadarLong(TestHyundaiCanfdLFASteeringLongBase):
+
+  @classmethod
+  def setUpClass(cls):
+    super().setUpClass()
+    if cls.__name__ == "TestHyundaiCanfdLFASteeringCCNCRadarLong":
+      raise unittest.SkipTest
+
+  def setUp(self):
+    self._safety_param_sp = HyundaiSafetyFlagsSP.CCNC
+    libsafety_py.libsafety.set_current_safety_param_sp(self._safety_param_sp)
+    super().setUp()
+
+  def tearDown(self):
+    self.safety.set_current_safety_param_sp(0)
 
 if __name__ == "__main__":
   unittest.main()

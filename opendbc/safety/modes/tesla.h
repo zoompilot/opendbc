@@ -17,6 +17,7 @@
 #define TESLA_VEHICLE_BUS_ADDR_CHECK \
   {.msg = {{0x3DF, 1, 8, 2U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true, .ignore_frequency_check = true}, { 0 }, { 0 }}},    /* UI_status2 */ \
 
+
 static uint8_t tesla_get_counter(const CANPacket_t *msg) {
   // default: 0x257, 0x118, 0x145, 0x286, 0x311
   // Signal: DI_speedCounter, DI_systemStatusCounter, ESP_statusCounter, DI_locStatusCounter, UI_warningCounter
@@ -83,16 +84,18 @@ static bool tesla_get_quality_flag_valid(const CANPacket_t *msg) {
   return valid;
 }
 
-static uint8_t tesla_get_steer_ctrl_type(const uint8_t ctrl_type) {
-  // FSD 14 swaps ANGLE_CONTROL (1) and LANE_KEEP_ASSIST (2), the only two types asked for
-  uint8_t steer_ctrl_type = ctrl_type;
+static int tesla_get_steer_ctrl_type(const int ctrl_type) {
+  int steer_ctrl_type = ctrl_type;
   if (safety_setup.tesla_fsd_14) {
-    steer_ctrl_type = (ctrl_type == 1U) ? 2U : 1U;
+    if (ctrl_type == 1) {
+      steer_ctrl_type = 2;
+    } else {
+      steer_ctrl_type = 1;
+    }
   }
   return steer_ctrl_type;
 }
 
-// latch a stock feature on its rising edge, unless it starts while engaged
 static void tesla_latch_rising_edge(bool now, bool *prev, bool *latched, bool engaged) {
   if (now && !*prev && !engaged) {
     *latched = true;
@@ -185,10 +188,9 @@ static void tesla_rx_hook(const CANPacket_t *msg) {
   // DAS_steeringControl
   if (msg_matches(msg, 0x488U, 2U)) {
     uint8_t steering_control_type = msg->data[2] >> 5;  // DAS_steeringControlType
-    bool tesla_stock_lkas_now = steering_control_type == tesla_get_steer_ctrl_type(2U);  // "LANE_KEEP_ASSIST"
+    bool tesla_stock_lkas_now = steering_control_type == (uint8_t)tesla_get_steer_ctrl_type(2);  // "LANE_KEEP_ASSIST"
 
-    tesla_latch_rising_edge(tesla_stock_lkas_now, &safety.tesla_stock_lkas_prev, &safety.tesla_stock_lkas,
-                            safety.controls_allowed || safety.controls_allowed_lateral);
+    tesla_latch_rising_edge(tesla_stock_lkas_now, &safety.tesla_stock_lkas_prev, &safety.tesla_stock_lkas, safety.controls_allowed || safety.controls_allowed_lateral);
   }
 }
 
@@ -225,18 +227,18 @@ static bool tesla_tx_hook(const CANPacket_t *msg) {
     // We use 1/10 deg as a unit here
     int desired_angle = from_offset(GET_BYTES_BE(msg, 0, 2) & 0x7FFFU, 16384);
     uint8_t steer_control_type = msg->data[2] >> 5;  // DAS_steeringControlType
-    const uint8_t angle_ctrl_type = tesla_get_steer_ctrl_type(1U);
-    const uint8_t lkas_ctrl_type = tesla_get_steer_ctrl_type(2U);
-    bool steer_control_enabled = (steer_control_type == angle_ctrl_type) ||  // ANGLE_CONTROL
-                                 (steer_control_type == lkas_ctrl_type);     // LANE_KEEP_ASSIST
+    const int angle_ctrl_type = tesla_get_steer_ctrl_type(1);
+    const int lkas_ctrl_type = tesla_get_steer_ctrl_type(2);
+    bool steer_control_enabled = (steer_control_type == (uint8_t)angle_ctrl_type) ||  // ANGLE_CONTROL
+                                 (steer_control_type == (uint8_t)lkas_ctrl_type);     // LANE_KEEP_ASSIST
 
     if (steer_angle_cmd_checks_vm(desired_angle, steer_control_enabled, TESLA_STEERING_LIMITS, TESLA_STEERING_PARAMS)) {
       violation = true;
     }
 
-    bool valid_steer_control_type = (steer_control_type == 0U) ||               // NONE
-                                    (steer_control_type == angle_ctrl_type) ||  // ANGLE_CONTROL
-                                    (steer_control_type == lkas_ctrl_type);     // LANE_KEEP_ASSIST
+    bool valid_steer_control_type = (steer_control_type == 0U) ||                        // NONE
+                                    (steer_control_type == (uint8_t)angle_ctrl_type) ||  // ANGLE_CONTROL
+                                    (steer_control_type == (uint8_t)lkas_ctrl_type);     // LANE_KEEP_ASSIST
     if (!valid_steer_control_type) {
       violation = true;
     }
@@ -347,7 +349,7 @@ static safety_config tesla_init(uint16_t param) {
   const uint16_t TESLA_PARAM_SP_MADS_SCREEN_BUTTON_4_FINGER = 4;
   const uint16_t TESLA_PARAM_SP_MADS_SCREEN_BUTTON_5_FINGER = 8;
 
-  safety_setup.tesla_has_vehicle_bus = GET_FLAG(safety_setup.current_safety_param_sp, TESLA_PARAM_SP_VEHICLE_BUS);
+  bool tesla_has_vehicle_bus = GET_FLAG(safety_setup.current_safety_param_sp, TESLA_PARAM_SP_VEHICLE_BUS);
 
   if (GET_FLAG(safety_setup.current_safety_param_sp, TESLA_PARAM_SP_MADS_SCREEN_BUTTON_3_FINGER)) {
     safety_setup.tesla_mads_screen_button_fingers = 3U;
@@ -358,7 +360,6 @@ static safety_config tesla_init(uint16_t param) {
   } else {
     safety_setup.tesla_mads_screen_button_fingers = 0U;
   }
-
   // we need to assume Autopark/Summon on startup since DI_state is a low freq msg.
   // this is so that we don't fault if starting while these systems are active
   safety.tesla_autopark = true;
@@ -379,7 +380,7 @@ static safety_config tesla_init(uint16_t param) {
     SET_TX_MSGS(TESLA_M3_Y_TX_MSGS, ret);
   }
 
-  if (safety_setup.tesla_has_vehicle_bus) {
+  if (tesla_has_vehicle_bus) {
     SET_RX_CHECKS(tesla_model3_y_vehicle_bus_rx_checks, ret);
   } else {
     SET_RX_CHECKS(tesla_model3_y_rx_checks, ret);

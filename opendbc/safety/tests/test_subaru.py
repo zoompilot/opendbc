@@ -3,10 +3,9 @@ import enum
 import unittest
 
 from opendbc.car.subaru.values import SubaruSafetyFlags
-from opendbc.car.structs import CarParams
-from opendbc.safety.tests.libsafety import libsafety_py
-import opendbc.safety.tests.common as common
 from opendbc.sunnypilot.car.subaru.values_ext import SubaruSafetyFlagsSP
+from opendbc.car.structs import CarParams
+import opendbc.safety.tests.common as common
 from functools import partial
 class SubaruMsg(enum.IntEnum):
   Brake_Status      = 0x13c
@@ -121,23 +120,19 @@ class TestSubaruTorqueSafetyBase(TestSubaruSafetyBase, common.DriverTorqueSteeri
     return self.packer.make_can_msg_safety("ES_LKAS", SUBARU_MAIN_BUS, values)
 class TestSubaruGen1TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSafetyBase, TestSubaruTorqueSafetyBase):
   TX_MSGS = lkas_tx_msgs(SUBARU_MAIN_BUS)
-class TestSubaruGen1StopAndGoSafety(TestSubaruGen1TorqueStockLongitudinalSafety):
-  """sunnypilot stop and go: the throttle and brake pedal the camera sees are openpilot's"""
-  STOP_AND_GO_MSGS = (SubaruMsg.Throttle, SubaruMsg.Brake_Pedal)
+class TestSubaruGen1TorqueStopAndGoSafety(TestSubaruGen1TorqueStockLongitudinalSafety):
+  _safety_param_sp = SubaruSafetyFlagsSP.STOP_AND_GO
 
-  TX_MSGS = lkas_tx_msgs(SUBARU_MAIN_BUS) + [[addr, SUBARU_CAM_BUS] for addr in STOP_AND_GO_MSGS]
-  RELAY_MALFUNCTION_ADDRS = {**TestSubaruSafetyBase.RELAY_MALFUNCTION_ADDRS, SUBARU_CAM_BUS: STOP_AND_GO_MSGS}
-  FWD_BLACKLISTED_ADDRS = {**fwd_blacklisted_addr(), SUBARU_MAIN_BUS: list(STOP_AND_GO_MSGS)}
-
-  def setUp(self):
-    libsafety_py.libsafety.set_current_safety_param_sp(SubaruSafetyFlagsSP.STOP_AND_GO)
-    super().setUp()
+  TX_MSGS = lkas_tx_msgs(SUBARU_MAIN_BUS) + [[SubaruMsg.Throttle, SUBARU_CAM_BUS], [SubaruMsg.Brake_Pedal, SUBARU_CAM_BUS]]
+  RELAY_MALFUNCTION_ADDRS = {**TestSubaruSafetyBase.RELAY_MALFUNCTION_ADDRS, SUBARU_CAM_BUS: (SubaruMsg.Throttle, SubaruMsg.Brake_Pedal)}
+  FWD_BLACKLISTED_ADDRS = {**fwd_blacklisted_addr(), SUBARU_MAIN_BUS: [SubaruMsg.Throttle, SubaruMsg.Brake_Pedal]}
 
   def test_stop_and_go_msgs_need_the_flag(self):
-    msgs = [common.make_msg(SUBARU_CAM_BUS, addr, 8) for addr in self.STOP_AND_GO_MSGS]
+    msgs = [common.make_msg(SUBARU_CAM_BUS, addr, 8) for addr in (SubaruMsg.Throttle, SubaruMsg.Brake_Pedal)]
     for msg in msgs:
       self.assertTrue(self._tx(msg))
-    self._reset_safety_hooks()  # the sunnypilot param is back to 0
+    self.safety.set_current_safety_param_sp(0)
+    self.safety.set_safety_hooks(self.SAFETY_MODEL, self.SAFETY_PARAM)
     for msg in msgs:
       self.assertFalse(self._tx(msg))
 

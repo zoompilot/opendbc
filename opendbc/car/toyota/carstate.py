@@ -209,7 +209,7 @@ class CarState(CarStateBase, CarStateExt):
 
     ret.buttonEvents = buttonEvents
 
-    CarStateExt.update(self, ret, ret_sp, can_parsers)
+    CarStateExt.update_ext(self, ret, ret_sp, can_parsers)
 
     return ret, ret_sp
 

@@ -30,9 +30,8 @@ static bool longitudinal_brake_checks(int desired_brake, const LongitudinalLimit
   return inactive_brake_violation || brake_limit_violation;
 }
 
-// gas interceptor
 static bool longitudinal_interceptor_checks(const CANPacket_t *msg) {
-  return !get_longitudinal_allowed() && ((msg->data[0] != 0U) || (msg->data[1] != 0U));
+  return !get_longitudinal_allowed() && (msg->data[0] || msg->data[1]);
 }
 
 #endif  // SAFETY_LONGITUDINAL_H

@@ -163,6 +163,9 @@ class HondaBase(common.CarSafetyTest):
   def _user_gas_msg(self, gas):
     return self._powertrain_data_msg(gas_pressed=gas)
 
+  def _lateral_steer_msg(self):
+    return self._send_steer_msg(1)
+
   def _send_steer_msg(self, steer):
     values = {"STEER_TORQUE": steer}
     return self.packer.make_can_msg_safety("STEERING_CONTROL", self.STEER_BUS, values)
@@ -357,10 +360,11 @@ class TestHondaNidecGasInterceptorSafety(GasInterceptorSafetyTest, HondaButtonEn
 
   TX_MSGS = HONDA_N_COMMON_TX_MSGS + [[0x200, 0]]
   INTERCEPTOR_THRESHOLD = 492
+  GAS_PRESSED_THRESHOLD = 492
 
   def setUp(self):
+    self._safety_param_sp = HondaSafetyFlagsSP.GAS_INTERCEPTOR
     super().setUp()
-    self.safety.set_current_safety_param_sp(HondaSafetyFlagsSP.GAS_INTERCEPTOR)
 class TestHondaNidecPcmAltSafety(TestHondaNidecPcmSafety):
   """
     Covers the Honda Nidec safety mode with alt SCM messages
@@ -386,10 +390,11 @@ class TestHondaNidecAltGasInterceptorSafety(GasInterceptorSafetyTest, HondaButto
 
   TX_MSGS = HONDA_N_COMMON_TX_MSGS + [[0x200, 0]]
   INTERCEPTOR_THRESHOLD = 492
+  GAS_PRESSED_THRESHOLD = 492
 
   def setUp(self):
+    self._safety_param_sp = HondaSafetyFlagsSP.GAS_INTERCEPTOR
     super().setUp()
-    self.safety.set_current_safety_param_sp(HondaSafetyFlagsSP.GAS_INTERCEPTOR)
 
   def _acc_state_msg(self, main_on):
     values = {"MAIN_ON": main_on, "COUNTER": self.cnt_acc_state % 4}
@@ -607,7 +612,7 @@ class TestHondaNidecHybridSafety(TestHondaNidecPcmSafety):
   DBC = "honda_clarity_hybrid_2018_can_generated"
 
   def setUp(self):
+    self._safety_param_sp = HondaSafetyFlagsSP.NIDEC_HYBRID
     super().setUp()
-    self.safety.set_current_safety_param_sp(HondaSafetyFlagsSP.NIDEC_HYBRID)
 if __name__ == "__main__":
   unittest.main()

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import functools
 import unittest
 import numpy as np
 
@@ -245,6 +244,16 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
     self.assertEqual(0, self.safety.safety_fwd_hook(2, lkas_msg_cam.addr))
     self.assertFalse(self._tx(no_lkas_msg))
 
+  def test_stock_lkas_not_latched_while_engaged(self):
+    for controls_allowed, controls_allowed_lateral in ((False, False), (True, False), (False, True)):
+      self.setUp()
+      self.safety.set_controls_allowed(controls_allowed)
+      self.safety.set_controls_allowed_lateral(controls_allowed_lateral)
+      lkas_msg_cam = self._angle_cmd_msg(0, state=self.steer_control_types['LANE_KEEP_ASSIST'], bus=2)
+      self.assertEqual(1, self._rx(lkas_msg_cam))
+      engaged = controls_allowed or controls_allowed_lateral
+      self.assertEqual(-1 if engaged else 0, self.safety.safety_fwd_hook(2, lkas_msg_cam.addr))
+
   # Tesla uses get_max_angle_delta_vm and get_max_angle_vm for real lateral accel and jerk limits
   # TODO: integrate this into AngleSteeringSafetyTest
   def test_angle_cmd_when_enabled(self):
@@ -427,11 +436,37 @@ class TestTeslaVehicleBusSafety(TestTeslaSafetyBase):
     super().setUp()
     self.safety = libsafety_py.libsafety
     self.packer_adas = CANPackerSafety("tesla_model3_vehicle")
-    self.safety.set_current_safety_param_sp(TeslaSafetyFlagsSP.HAS_VEHICLE_BUS | TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_3_FINGER)
+    self._safety_param_sp = TeslaSafetyFlagsSP.HAS_VEHICLE_BUS | TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_3_FINGER
+    self.safety.set_current_safety_param_sp(self._safety_param_sp)
     self.safety.set_safety_hooks(CarParams.SafetyModel.tesla, 0)
     self.safety.init_tests()
-    # init_tests clears the param
-    self.safety.set_current_safety_param_sp(TeslaSafetyFlagsSP.HAS_VEHICLE_BUS | TeslaSafetyFlagsSP.MADS_SCREEN_BUTTON_3_FINGER)
+
+  @property
+  def _all_packers(self):
+    return [self.packer, self.packer_adas]
+
+  def _packer_for_addr(self, addr):
+    for p in self._all_packers:
+      if addr in p.dbc.addr_to_msg:
+        return p
+    raise KeyError(f"addr {hex(addr)} not in any DBC")
+
+  def _rx_check_msg(self, addr, bus, values=None):
+    p = self._packer_for_addr(addr)
+    name = p.dbc.addr_to_msg[addr].name
+    quality_flags = {sig: valid[0] for sig, valid in self.RX_QUALITY_FLAGS.get(name, {}).items()}
+    return p.make_can_msg_safety(addr, bus, {**quality_flags, **(values or {})})
+
+  def _rx_check_builders(self):
+    import functools
+    cfg = self.safety.safety_a.setup.current_safety_config
+    builders = []
+    for i in range(cfg.rx_checks_len):
+      msgs = [m for m in cfg.rx_checks[i].msg
+              if any(m.addr in p.dbc.addr_to_msg for p in self._all_packers)]
+      self.assertTrue(msgs, f"RX check {i}: none of its msgs are in {self.DBC} or tesla_model3_vehicle")
+      builders += [(i, m, functools.partial(self._rx_check_msg, m.addr, m.bus)) for m in msgs]
+    return builders
 
   def _lkas_button_msg(self, enabled):
     values = {"UI_activeTouchPoints": 3 if enabled else 0}
@@ -440,14 +475,27 @@ class TestTeslaVehicleBusSafety(TestTeslaSafetyBase):
   def _ignore_frequency_check_msgs(self):
     return [self._lkas_button_msg(False)]
 
-  def _rx_check_builders(self):
-    # UI_status2 is in the vehicle bus DBC: the common RX tests run on the party bus checks
-    builders = []
-    cfg = self.safety.safety_a.setup.current_safety_config
-    for i in range(cfg.rx_checks_len):
-      msgs = [m for m in cfg.rx_checks[i].msg if m.addr in self.packer.dbc.addr_to_msg]
-      builders += [(i, m, functools.partial(self._rx_check_msg, m.addr, m.bus)) for m in msgs]
-    return builders
+  def test_rx_reads_only_signal_bits(self):
+    from opendbc.safety.tests.common import set_value, state_buffer
+    for _, m, build in self._rx_check_builders():
+      with self.subTest(addr=hex(m.addr), bus=m.bus):
+        msg = build()
+        dat = bytes(msg[0].data)[:m.len]
+        p = self._packer_for_addr(m.addr)
+        sigs = p.dbc.addr_to_msg[m.addr].sigs.values()
+        signal_bits = bytearray(m.len)
+        for sig in sigs:
+          set_value(signal_bits, sig, (1 << sig.size) - 1)
+        noisy_dat = bytearray(byte | (~mask & 0xFF) for byte, mask in zip(dat, signal_bits, strict=True))
+        for sig in sigs:
+          if sig.calc_checksum:
+            set_value(noisy_dat, sig, sig.calc_checksum(m.addr, sig, noisy_dat))
+        states = []
+        for frame, fill in ((dat, 0x00), (bytes(noisy_dat), 0xFF)):
+          self._reset_safety_hooks()
+          self.assertTrue(self._rx(libsafety_py.make_CANPacket(m.addr, m.bus, frame, fill)), f"{fill=:#x}")
+          states.append(state_buffer("safety_a")[:])
+        self.assertEqual(states[0], states[1])
 
   def _set_mads_screen_button_config(self, finger_flag):
     param_sp = TeslaSafetyFlagsSP.HAS_VEHICLE_BUS

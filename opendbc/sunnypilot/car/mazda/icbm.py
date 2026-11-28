@@ -32,7 +32,7 @@ class IntelligentCruiseButtonManagementInterface(IntelligentCruiseButtonManageme
     super().__init__(CP, CP_SP)
     self.tap_period = 1. / get_actuation_profile(CP.brand).tap_rate_hz
 
-  def update(self, CC_SP, CS, packer, frame, last_button_frame) -> list[CanData]:
+  def update_icbm(self, CC_SP, CS, packer, frame, last_button_frame) -> list[CanData]:
     can_sends = []
     self.CC_SP = CC_SP
     self.ICBM = CC_SP.intelligentCruiseButtonManagement

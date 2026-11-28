@@ -221,12 +221,14 @@ class TestGmCameraNonACCSafety(TestGmCameraSafety):
     return GMSafetyFlags.HW_CAM | self.EXTRA_SAFETY_PARAM
 
   def setUp(self):
+    self._safety_param_sp = GMSafetyFlagsSP.NON_ACC
     super().setUp()
-    self.safety.set_current_safety_param_sp(GMSafetyFlagsSP.NON_ACC)
 
   def _pcm_status_msg(self, enable):
     values = {"CruiseActive": enable}
     return self.packer.make_can_msg_safety("ECMCruiseControl", 0, values)
+
+
 class TestGmCameraEVNonACCSafety(TestGmCameraNonACCSafety, TestGmEVSafetyBase):
   pass
 

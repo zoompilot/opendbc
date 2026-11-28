@@ -6,10 +6,11 @@ from opendbc.car.fw_versions import build_fw_dict
 from opendbc.car.hyundai.interface import CarInterface
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.radar_interface import RADAR_START_ADDR
-from opendbc.car.hyundai.values import CAR, DATE_FW_ECUS, CANFD_FUZZY_WHITELIST, \
+from opendbc.car.hyundai.values import CAR, DATE_FW_ECUS, \
+                                         CANFD_FUZZY_WHITELIST, \
                                          PLATFORM_CODE_ECUS, HYUNDAI_VERSION_REQUEST_LONG, \
-                                         HyundaiFlags, get_platform_codes, HyundaiSafetyFlags, match_fw_to_car_fuzzy, \
-                                         NON_SCC_CAR
+                                         HyundaiFlags, get_platform_codes, HyundaiSafetyFlags, \
+                                         NON_SCC_CAR, match_fw_to_car_fuzzy
 from opendbc.car.hyundai.fingerprints import FW_VERSIONS
 from opendbc.testing import fuzzy_test
 

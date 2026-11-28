@@ -2,7 +2,7 @@ from opendbc.car.crc import CRC8J1850, mk_crc8_fun
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
 from opendbc.sunnypilot.car.hyundai.escc import EnhancedSmartCruiseControl
-from opendbc.sunnypilot.car.hyundai.lead_data_ext import CanLeadData
+from opendbc.sunnypilot.car.hyundai.lead_data_ext import LeadData
 
 hyundai_checksum = mk_crc8_fun(CRC8J1850, init_crc=0xFD, xor_out=0xDF)
 
@@ -131,7 +131,7 @@ def create_lfahda_mfc(packer, enabled, lfa_icon):
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
 
-def create_acc_commands(packer, enabled, accel, upper_jerk, idx, lead_data: CanLeadData,
+def create_acc_commands(packer, enabled, accel, upper_jerk, idx, lead_data: LeadData,
                         hud_control, set_speed, stopping, long_override, use_fca, CP,
                         main_cruise_enabled, tuning, ESCC: EnhancedSmartCruiseControl | None = None):
   commands = []
@@ -170,6 +170,11 @@ def create_acc_commands(packer, enabled, accel, upper_jerk, idx, lead_data: CanL
 
     return scc12_values
 
+  def calculate_scc12_checksum(values):
+    scc12_dat = packer.make_can_msg("SCC12", 0, values)[1]
+    values["CR_VSM_ChkSum"] = 0x10 - sum(sum(divmod(i, 16)) for i in scc12_dat) % 0x10
+    return values
+
   def get_scc14_values():
     return {
       "ComfortBandUpper": tuning.comfort_band_upper, # stock usually is 0 but sometimes uses higher values
@@ -198,6 +203,8 @@ def create_acc_commands(packer, enabled, accel, upper_jerk, idx, lead_data: CanL
   commands.append(packer.make_can_msg("SCC11", 0, scc11_values))
 
   scc12_values = get_scc12_values()
+  scc12_values = calculate_scc12_checksum(scc12_values)
+
   commands.append(packer.make_can_msg("SCC12", 0, scc12_values))
 
   scc14_values = get_scc14_values()

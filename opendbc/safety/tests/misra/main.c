@@ -23,6 +23,5 @@ int main(void) {
   SAFETY_UNUSED(safety_param_sp);
   SAFETY_UNUSED(safety_mads_alternative_experience);
   SAFETY_UNUSED(safety_heartbeat_mads);
-  SAFETY_UNUSED(get_acc_main_on_mismatches);
   return 0;
 }
