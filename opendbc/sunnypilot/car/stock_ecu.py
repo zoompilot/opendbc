@@ -9,7 +9,8 @@ The stock ECU transition contract.
 A brand that silences a stock ECU for openpilot longitudinal (Mazda's radar) reports where
 that ownership stands through one state, so card and the UI never read brand state. The
 controller exposes it as `stock_ecu_state`; a controller without the attribute silences
-nothing (NOT_NEEDED).
+nothing (NOT_NEEDED). The one exception is TAKEOVER_BRANDS: before the car's first report
+there is no state to read.
 
 The state is the driver's view: what, if anything, they have to do. Ownership details (which
 prerequisite, which UDS reply) go to carlog. READY is the vehicle's own guard on the silence
