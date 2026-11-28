@@ -28,7 +28,7 @@ class CarStateExt:
     self.CP = CP
     self.CP_SP = CP_SP
 
-  def update(self, ret: structs.CarState, ret_sp: structs.CarStateSP, can_parsers: dict[StrEnum, CANParser]) -> None:
+  def update_ext(self, ret: structs.CarState, ret_sp: structs.CarStateSP, can_parsers: dict[StrEnum, CANParser]) -> None:
     # Two sources share one layout. CAM_TRAFFIC_SIGNS is the camera's sign recognition, fused
     # with the map, and is sent blank by cars without it. NAV_SPEED_LIMIT is the navigation
     # unit's map limit, sent only with the nav SD card. Where both exist the camera wins: it

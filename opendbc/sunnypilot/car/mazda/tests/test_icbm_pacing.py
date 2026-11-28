@@ -51,7 +51,7 @@ class TestIcbmEmission(unittest.TestCase):
     continues across calls. Returns the frame numbers on which a button frame was sent."""
     send_frames = []
     for btn in buttons_by_frame:
-      sends = self.icbm.update(make_carcontrolsp(btn), self.CS, self.packer, self.frame, self.last_button_frame)
+      sends = self.icbm.update_icbm(make_carcontrolsp(btn), self.CS, self.packer, self.frame, self.last_button_frame)
       self.last_button_frame = self.icbm.last_button_frame
       if sends:
         send_frames.append(self.frame)

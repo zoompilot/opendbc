@@ -413,7 +413,7 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
       *self.main_on_lkas_events(ret, btns),
     ]
 
-    CarStateExt.update(self, ret, ret_sp, can_parsers)
+    CarStateExt.update_ext(self, ret, ret_sp, can_parsers)
 
     return ret, ret_sp
 

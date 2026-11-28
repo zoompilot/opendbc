@@ -162,7 +162,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
     icbm_suppress = (CC.cruiseControl.cancel or CC.cruiseControl.resume or CS.cancel_button == 1 or
                      self.mrcc_undo_pending or CS.tja_button == 1)
     if not icbm_suppress:
-      can_sends.extend(IntelligentCruiseButtonManagementInterface.update(self, CC_SP, CS, self.packer, self.frame, self.last_button_frame))
+      can_sends.extend(IntelligentCruiseButtonManagementInterface.update_icbm(self, CC_SP, CS, self.packer, self.frame, self.last_button_frame))
 
     new_actuators = CC.actuators.as_builder()
     new_actuators.torque = apply_torque / self.params.STEER_MAX

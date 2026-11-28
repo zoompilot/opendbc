@@ -42,6 +42,18 @@ class TestMazdaSafety(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTes
     self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, self.SAFETY_PARAM)
     self.safety.init_tests()
 
+  def test_controls_allowed_lateral_steering(self):
+    # under MADS only controls_allowed_lateral steers: cruise alone must not take the LKAS addresses from the camera
+    results = []
+    for controls_allowed, controls_allowed_lateral in ((True, False), (False, True), (False, False)):
+      self.setUp()
+      self.safety.set_mads_params(True, False, False)
+      msg = self._lateral_steer_msg()
+      self.safety.set_controls_allowed(controls_allowed)
+      self.safety.set_controls_allowed_lateral(controls_allowed_lateral)
+      results.append(self._tx(msg))
+    self.assertEqual([False, True, False], results)
+
   def _torque_driver_msg(self, torque):
     values = {"STEER_TORQUE_SENSOR": torque}
     return self.packer.make_can_msg_safety("STEER_TORQUE", 0, values)
@@ -507,12 +519,11 @@ class MazdaTjaButtonBase(common.SafetyTestBase):
     self._init(tja_button=self.TJA_BUTTON)
 
   def _init(self, tja_button, param=0):
-    param_sp = MazdaSafetyFlagsSP.TJA_BUTTON if tja_button else 0
-    self.safety.set_current_safety_param_sp(param_sp)
+    # _reset_safety_hooks rebuilds the hooks from _safety_param_sp
+    self._safety_param_sp = MazdaSafetyFlagsSP.TJA_BUTTON if tja_button else 0
+    self.safety.set_current_safety_param_sp(self._safety_param_sp)
     self.safety.set_safety_hooks(CarParams.SafetyModel.mazda, param)
     self.safety.init_tests()
-    # init_tests clears it: keep the param the hooks were built from, so _reset_safety_hooks rebuilds them
-    self.safety.set_current_safety_param_sp(param_sp)
     self.safety.set_mads_params(True, False, False)
 
   def tearDown(self):
